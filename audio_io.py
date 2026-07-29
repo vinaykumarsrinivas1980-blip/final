@@ -403,7 +403,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     stop_event = threading.Event()
 
     def mic_interrupt_listener():
-        """Background listener monitoring mic for openWakeWord barge-in during playback."""
+        """Background listener monitoring mic for openWakeWord and voice speech ('STOP') barge-in during playback."""
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
@@ -430,14 +430,18 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
+        consecutive_voice_frames = 0
+
         def callback(indata, frames, time_info, status):
+            nonlocal consecutive_voice_frames
             if stop_event.is_set():
                 return
             
+            # 1. Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
             if wakeword_detector:
                 hit = wakeword_detector.predict_frame(indata)
                 if hit:
-                    print(f"\n⚡ [WAKE WORD INTERRUPT] Interrupted by '{hit}'!")
+                    print(f"\n⚡ [WAKE WORD INTERRUPT] Interrupted by wake word '{hit}'!")
                     interrupted[0] = True
                     try:
                         pygame.mixer.music.stop()
@@ -445,6 +449,24 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         pass
                     stop_event.set()
                     return
+
+            # 2. Check Voice Activity / RMS volume spike for "STOP" / voice command interrupt
+            if len(indata) > 0:
+                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
+                # Active speech threshold: speech into mic is typically RMS > 450
+                if rms > 450:
+                    consecutive_voice_frames += 1
+                    if consecutive_voice_frames >= 2:  # ~160ms of continuous voice speech
+                        print(f"\n🛑 [VOICE INTERRUPT] Voice/Stop detected! Cut off speaker playback.")
+                        interrupted[0] = True
+                        try:
+                            pygame.mixer.music.stop()
+                        except Exception:
+                            pass
+                        stop_event.set()
+                        return
+                else:
+                    consecutive_voice_frames = 0
 
         for ch in channels_to_try:
             for sr in rates_to_try:
@@ -464,7 +486,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 except Exception:
                     continue
 
-    if enable_interrupt and mic_device_index is not None or wakeword_detector is not None:
+    if enable_interrupt or wakeword_detector is not None:
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 
