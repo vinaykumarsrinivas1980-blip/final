@@ -398,10 +398,10 @@ def check_keypress_interrupt():
                 return True
     return False
 
-def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None):
+def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None, stt_engine=None):
     """
     Plays an MP3 or WAV audio file through the specified speaker device index.
-    Supports 100% reliable voice barge-in interruption via openWakeWord ('Hey Jarvis' / 'Alexa') and keypresses.
+    Supports 100% reliable voice barge-in interruption via openWakeWord ('Hey Jarvis' / 'Alexa'), voice stop commands ('stop'), and keypresses.
     Returns True if playback was interrupted, False if completed normally.
     """
     if not os.path.exists(filepath):
@@ -418,7 +418,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     stop_event = threading.Event()
 
     def mic_interrupt_listener():
-        """Background listener monitoring mic for openWakeWord barge-in ('Hey Jarvis' / 'Alexa') during playback."""
+        """Background listener monitoring mic for openWakeWord ('Hey Jarvis') and voice stop commands ('stop', 'ruko', etc.) during playback."""
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
@@ -445,11 +445,15 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
+        speech_frames = []
+        last_speech_check_time = 0.0
+
         def callback(indata, frames, time_info, status):
+            nonlocal speech_frames, last_speech_check_time
             if stop_event.is_set():
                 return
             
-            # Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
+            # 1. Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
             if wakeword_detector:
                 hit = wakeword_detector.predict_frame(indata)
                 if hit:
@@ -461,6 +465,62 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         pass
                     stop_event.set()
                     return
+
+            # 2. Check Voice Activity & Stop Keywords ("stop", "quiet", "pause", "ruko", "chup")
+            if len(indata) > 0:
+                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
+                # Spoken voice directly into microphone capsule (typically RMS > 650)
+                if rms > 650:
+                    mono_chunk = indata.mean(axis=1) if indata.ndim > 1 else indata.flatten()
+                    speech_frames.append(mono_chunk.copy())
+                    
+                    now = time.time()
+                    if (now - last_speech_check_time) > 0.4 and len(speech_frames) >= 5:
+                        last_speech_check_time = now
+                        try:
+                            concat_speech = np.concatenate(speech_frames, axis=0)
+                            speech_frames.clear()
+                            
+                            temp_wav = "temp_interrupt_check.wav"
+                            os.makedirs(os.path.dirname(os.path.abspath(temp_wav)), exist_ok=True)
+                            with wave.open(temp_wav, 'wb') as wf:
+                                wf.setnchannels(1)
+                                wf.setsampwidth(2)
+                                wf.setframerate(16000)
+                                wf.writeframes(concat_speech.astype(np.int16).tobytes())
+
+                            from prompts import is_stop_command
+                            recognized_text = None
+                            if stt_engine:
+                                try:
+                                    recognized_text = stt_engine.transcribe(temp_wav)
+                                except Exception:
+                                    pass
+
+                            if recognized_text and is_stop_command(recognized_text):
+                                print(f"\n🛑 [VOICE INTERRUPT] Voice stop command detected: \"{recognized_text}\"!")
+                                interrupted[0] = True
+                                try:
+                                    pygame.mixer.music.stop()
+                                except Exception:
+                                    pass
+                                stop_event.set()
+                                return
+                            elif rms > 1250:
+                                # High volume speech override right into microphone
+                                print(f"\n🛑 [VOICE INTERRUPT] Direct voice interrupt detected!")
+                                interrupted[0] = True
+                                try:
+                                    pygame.mixer.music.stop()
+                                except Exception:
+                                    pass
+                                stop_event.set()
+                                return
+                        except Exception:
+                            pass
+                else:
+                    if len(speech_frames) > 0 and (time.time() - last_speech_check_time) > 0.5:
+                        speech_frames.clear()
 
         for ch in channels_to_try:
             for sr in rates_to_try:
@@ -481,7 +541,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 except Exception:
                     continue
 
-    if enable_interrupt and wakeword_detector is not None:
+    if enable_interrupt or wakeword_detector is not None:
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 

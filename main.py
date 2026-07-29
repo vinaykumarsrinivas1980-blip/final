@@ -174,9 +174,9 @@ def main():
             speech_file = tts_engine.synthesize(response_text, "response_audio.mp3")
             tts_latency = time.time() - tts_start
 
-            # 5. AUDIO PLAYBACK (WITH OPENWAKEWORD BARGE-IN VOICE INTERRUPT)
+            # 5. AUDIO PLAYBACK (WITH OPENWAKEWORD & VOICE 'STOP' BARGE-IN INTERRUPT)
             play_start = time.time()
-            was_interrupted = play_audio(speech_file, device_index=spk_idx, enable_interrupt=wake_word_enabled, mic_device_index=mic_idx, wakeword_detector=wakeword_detector)
+            was_interrupted = play_audio(speech_file, device_index=spk_idx, enable_interrupt=wake_word_enabled, mic_device_index=mic_idx, wakeword_detector=wakeword_detector, stt_engine=stt_engine)
             play_latency = time.time() - play_start
 
 
