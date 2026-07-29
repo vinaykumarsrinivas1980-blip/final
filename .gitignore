@@ -1,0 +1,24 @@
+# Environment & API keys (CRITICAL: NEVER COMMIT API KEYS)
+.env
+
+# Python Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# Byte-compiled / Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary audio test files & recordings
+*.wav
+*.mp3
+conversation_history.json
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
