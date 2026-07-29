@@ -25,8 +25,9 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 
-def print_banner(wake_word_enabled=False):
-    mode_str = "Hands-Free Wake Word ('Hey Jarvis')" if wake_word_enabled else "Push-To-Talk (ENTER)"
+def print_banner(wake_word_enabled=False, wake_model="grey"):
+    display_model = wake_model.replace("_", " ").title()
+    mode_str = f"Hands-Free Wake Word ('{display_model}')" if wake_word_enabled else "Push-To-Talk (ENTER)"
     banner = f"""
     ============================================================
     🤖 RASPBERRY PI CLOUD VOICE ASSISTANT
@@ -64,9 +65,10 @@ def get_device_name(index, kind='input'):
 
 def main():
     parser = argparse.ArgumentParser(description="Raspberry Pi Cloud Voice Assistant")
-    parser.add_argument("--wake-word", "-w", action="store_true", help="Enable hands-free wake word detection ('Hey Jarvis')")
+    parser.add_argument("--wake-word", "-w", action="store_true", help="Enable hands-free wake word detection ('Grey')")
     parser.add_argument("--push-to-talk", "-p", action="store_true", help="Use manual ENTER key push-to-talk mode")
-    parser.add_argument("--wake-model", type=str, default="hey_jarvis", help="openWakeWord model name (default: hey_jarvis)")
+    default_model = os.getenv("WAKE_MODEL", "grey")
+    parser.add_argument("--wake-model", type=str, default=default_model, help=f"openWakeWord model name (default: {default_model})")
     args = parser.parse_args()
 
     if args.push_to_talk:
@@ -74,7 +76,7 @@ def main():
     else:
         wake_word_enabled = args.wake_word or os.getenv("WAKE_WORD_MODE", "true").lower() in ("true", "1", "yes")
 
-    print_banner(wake_word_enabled=wake_word_enabled)
+    print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model)
 
 
     # Step 1: Detect Audio Hardware

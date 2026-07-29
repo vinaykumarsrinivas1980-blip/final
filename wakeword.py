@@ -21,11 +21,11 @@ SAMPLE_RATE = 16000
 CHUNK_SIZE = 1280
 
 class WakeWordDetector:
-    def __init__(self, model_name="hey_jarvis", threshold=0.2):
+    def __init__(self, model_name="grey", threshold=0.2):
         """
         Initializes openWakeWord model.
 
-        :param model_name: Primary model name or list of models ('hey_jarvis', 'alexa', 'hey_mycroft')
+        :param model_name: Primary model name or list of models ('grey', 'hey_jarvis', 'alexa', 'hey_mycroft')
         :param threshold: Detection confidence threshold between 0.0 and 1.0 (default 0.2 for high sensitivity)
         """
         self.model_name = model_name
@@ -42,8 +42,14 @@ class WakeWordDetector:
             # Download models if not already cached locally
             openwakeword.utils.download_models()
 
-            self.oww_model = Model(wakeword_models=self.models_to_load, inference_framework="onnx")
-            print(f"✅ [WakeWord] Loaded openWakeWord models: {self.models_to_load} (Sensitivity Threshold: {self.threshold})")
+            models_to_try = [self.model_name] + [m for m in self.models_to_load if m != self.model_name]
+            try:
+                self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
+            except Exception:
+                self.oww_model = Model(wakeword_models=self.models_to_load, inference_framework="onnx")
+
+            display_phrase = self.model_name.replace("_", " ").title()
+            print(f"✅ [WakeWord] Loaded openWakeWord models (Trigger Phrase: '{display_phrase}', Sensitivity Threshold: {self.threshold})")
         except Exception as e:
             print(f"❌ [WakeWord Error] Failed to initialize openWakeWord: {e}", file=sys.stderr)
             print("💡 Tip for Raspberry Pi / Python 3.13: Install openwakeword without tflite-runtime by running:", file=sys.stderr)
@@ -84,7 +90,8 @@ class WakeWordDetector:
         if not self.oww_model:
             raise RuntimeError("WakeWordDetector model is not initialized.")
 
-        print(f"\n👂 [WAKE WORD] Listening for 'Hey Jarvis'...")
+        display_phrase = self.model_name.replace("_", " ").title()
+        print(f"\n👂 [WAKE WORD] Listening for '{display_phrase}'...")
         start_time = time.time()
         detected = False
         detected_name = ""
