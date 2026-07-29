@@ -9,7 +9,7 @@ import time
 import numpy as np
 import sounddevice as sd
 from scipy import signal
-from audio_io import get_working_device_index
+from audio_io import get_working_device_index, suppress_c_stderr
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -135,20 +135,21 @@ class WakeWordDetector:
                 for sr in rates_to_try:
                     block_size = int(round(0.08 * sr))
                     try:
-                        with sd.InputStream(
-                            samplerate=sr,
-                            blocksize=block_size,
-                            channels=ch,
-                            dtype='int16',
-                            device=target_device,
-                            callback=audio_callback
-                        ):
-                            opened = True
-                            while not detected:
-                                if timeout and (time.time() - start_time) > timeout:
-                                    print("⏳ [WAKE WORD] Listening timed out.")
-                                    return False
-                                sd.sleep(50)
+                        with suppress_c_stderr():
+                            with sd.InputStream(
+                                samplerate=sr,
+                                blocksize=block_size,
+                                channels=ch,
+                                dtype='int16',
+                                device=target_device,
+                                callback=audio_callback
+                            ):
+                                opened = True
+                                while not detected:
+                                    if timeout and (time.time() - start_time) > timeout:
+                                        print("⏳ [WAKE WORD] Listening timed out.")
+                                        return False
+                                    sd.sleep(50)
                         break
                     except Exception as err:
                         last_err = err
@@ -162,20 +163,21 @@ class WakeWordDetector:
                     for sr in [16000, 44100, 48000]:
                         block_size = int(round(0.08 * sr))
                         try:
-                            with sd.InputStream(
-                                samplerate=sr,
-                                blocksize=block_size,
-                                channels=ch,
-                                dtype='int16',
-                                device=None,
-                                callback=audio_callback
-                            ):
-                                opened = True
-                                while not detected:
-                                    if timeout and (time.time() - start_time) > timeout:
-                                        print("⏳ [WAKE WORD] Listening timed out.")
-                                        return False
-                                    sd.sleep(50)
+                            with suppress_c_stderr():
+                                with sd.InputStream(
+                                    samplerate=sr,
+                                    blocksize=block_size,
+                                    channels=ch,
+                                    dtype='int16',
+                                    device=None,
+                                    callback=audio_callback
+                                ):
+                                    opened = True
+                                    while not detected:
+                                        if timeout and (time.time() - start_time) > timeout:
+                                            print("⏳ [WAKE WORD] Listening timed out.")
+                                            return False
+                                        sd.sleep(50)
                             break
                         except Exception as err:
                             last_err = err

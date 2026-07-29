@@ -24,6 +24,28 @@ SAMPLE_RATE = 16000  # 16kHz mono is standard for speech processing
 CHANNELS = 1
 DTYPE = 'int16'
 
+class suppress_c_stderr:
+    """Context manager to suppress low-level ALSA / PortAudio C-library stderr warnings on Linux."""
+    def __enter__(self):
+        if sys.platform != 'win32':
+            try:
+                self.null_fd = os.open(os.devnull, os.O_WRONLY)
+                self.old_stderr = os.dup(2)
+                os.dup2(self.null_fd, 2)
+            except Exception:
+                self.null_fd = None
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if sys.platform != 'win32' and getattr(self, 'null_fd', None) is not None:
+            try:
+                os.dup2(self.old_stderr, 2)
+                os.close(self.old_stderr)
+                os.close(self.null_fd)
+            except Exception:
+                pass
+
+
 def list_audio_devices():
     """Prints all available audio input and output devices."""
     print("\n" + "=" * 60)
@@ -183,17 +205,18 @@ class AudioRecorder:
         for ch in channels_to_try:
             for sr in rates_to_try:
                 try:
-                    with sd.InputStream(
-                        samplerate=sr,
-                        channels=ch,
-                        dtype=DTYPE,
-                        device=target_device,
-                        callback=callback
-                    ):
-                        self.actual_sample_rate = sr
-                        opened = True
-                        while self.is_recording:
-                            sd.sleep(50)
+                    with suppress_c_stderr():
+                        with sd.InputStream(
+                            samplerate=sr,
+                            channels=ch,
+                            dtype=DTYPE,
+                            device=target_device,
+                            callback=callback
+                        ):
+                            self.actual_sample_rate = sr
+                            opened = True
+                            while self.is_recording:
+                                sd.sleep(50)
                     break
                 except Exception as err:
                     self.error_msg = str(err)
@@ -220,36 +243,45 @@ class AudioRecorder:
             self._thread.join()
 
         if not self.frames:
-            err_detail = f" ({self.error_msg})" if self.error_msg else ""
-            raise ValueError(f"No audio frames captured. Check USB mic connection.{err_detail}")
+            print("⚠️ No audio frames captured.", file=sys.stderr)
+            return output_filepath, 0.0
 
+        # Concatenate recorded audio frames
         audio_data = np.concatenate(self.frames, axis=0)
+        duration = len(audio_data) / float(self.actual_sample_rate)
 
-        # Resample to 16kHz if microphone recorded at 44.1kHz or 48kHz
-        if self.actual_sample_rate != self.sample_rate:
-            num_samples = int(len(audio_data) * self.sample_rate / self.actual_sample_rate)
-            audio_data = signal.resample(audio_data, num_samples).astype(np.int16)
-        
-        # Save to WAV file using scipy
-        wavfile.write(output_filepath, self.sample_rate, audio_data)
-        
-        # Return duration in seconds
-        duration = len(audio_data) / self.sample_rate
+        # Resample to standard 16kHz if captured at a hardware sample rate != 16000Hz
+        if self.actual_sample_rate != SAMPLE_RATE:
+            num_samples = int(round(len(audio_data) * SAMPLE_RATE / float(self.actual_sample_rate)))
+            if audio_data.ndim > 1:
+                resampled_channels = []
+                for c in range(audio_data.shape[1]):
+                    resampled_c = signal.resample(audio_data[:, c].astype(np.float32), num_samples)
+                    resampled_channels.append(resampled_c)
+                audio_data = np.column_stack(resampled_channels).astype(DTYPE)
+            else:
+                audio_data = signal.resample(audio_data.astype(np.float32), num_samples).astype(DTYPE)
+
+        # Write to WAV file
+        os.makedirs(os.path.dirname(os.path.abspath(output_filepath)), exist_ok=True)
+        with wave.open(output_filepath, 'wb') as wf:
+            wf.setnchannels(CHANNELS if audio_data.ndim == 1 else audio_data.shape[1])
+            wf.setsampwidth(2)  # 16-bit PCM = 2 bytes
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(audio_data.tobytes())
+
         return output_filepath, duration
 
 
 def record_push_to_talk(output_filepath="temp_input.wav", device_index=None):
     """
-    Interactive Push-To-Talk helper.
-    Press ENTER to start recording, ENTER again to stop recording.
+    Push-to-Talk interactive CLI mode.
+    Press ENTER to start recording, press ENTER again to stop recording.
     """
-    input("👉 Press [ENTER] to start recording...")
     recorder = AudioRecorder(device_index=device_index)
-    
-    print("🎙️  [LISTENING] Recording... Press [ENTER] to stop.")
     recorder.start_recording()
     
-    # Wait for enter key
+    print("🎙️  [LISTENING] Recording... Press [ENTER] to stop.")
     input()
     
     print("⏹️  [STOPPED] Finalizing audio file...")
@@ -357,40 +389,23 @@ def normalize_and_boost_audio(data, gain_db=6.0):
 
 
 def check_keypress_interrupt():
-    """Returns True if user pressed any key (ENTER, Spacebar, Q, Esc) on Windows or Linux."""
-    try:
-        if sys.platform == 'win32':
-            import msvcrt
-            if msvcrt.kbhit():
-                msvcrt.getch()
+    """Returns True if user has pressed ENTER or key in Windows CLI."""
+    if sys.platform == 'win32':
+        import msvcrt
+        if msvcrt.kbhit():
+            ch = msvcrt.getch()
+            if ch in [b'\r', b'\n', b' ']:
                 return True
-        else:
-            import select
-            rlist, _, _ = select.select([sys.stdin], [], [], 0)
-            if rlist:
-                sys.stdin.read(1)
-                return True
-    except Exception:
-        pass
     return False
 
 def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None):
     """
-    Plays an audio file (WAV or MP3) using pygame.mixer.
+    Plays an MP3 or WAV audio file through the specified speaker device index.
     Supports 100% reliable voice barge-in interruption via openWakeWord ('Hey Jarvis' / 'Alexa') and keypresses.
     Returns True if playback was interrupted, False if completed normally.
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Audio file not found for playback: {filepath}")
-
-    # Flush stale keypresses from buffer before playback starts
-    if sys.platform == 'win32':
-        import msvcrt
-        try:
-            while msvcrt.kbhit():
-                msvcrt.getch()
-        except Exception:
-            pass
 
     import pygame
     try:
@@ -403,7 +418,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     stop_event = threading.Event()
 
     def mic_interrupt_listener():
-        """Background listener monitoring mic for openWakeWord and voice speech ('STOP') barge-in during playback."""
+        """Background listener monitoring mic for openWakeWord barge-in ('Hey Jarvis' / 'Alexa') during playback."""
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
@@ -430,14 +445,11 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
-        consecutive_voice_frames = 0
-
         def callback(indata, frames, time_info, status):
-            nonlocal consecutive_voice_frames
             if stop_event.is_set():
                 return
             
-            # 1. Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
+            # Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
             if wakeword_detector:
                 hit = wakeword_detector.predict_frame(indata)
                 if hit:
@@ -450,43 +462,26 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                     stop_event.set()
                     return
 
-            # 2. Check Voice Activity / RMS volume spike for "STOP" / voice command interrupt
-            if len(indata) > 0:
-                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Active speech threshold: speech into mic is typically RMS > 450
-                if rms > 450:
-                    consecutive_voice_frames += 1
-                    if consecutive_voice_frames >= 2:  # ~160ms of continuous voice speech
-                        print(f"\n🛑 [VOICE INTERRUPT] Voice/Stop detected! Cut off speaker playback.")
-                        interrupted[0] = True
-                        try:
-                            pygame.mixer.music.stop()
-                        except Exception:
-                            pass
-                        stop_event.set()
-                        return
-                else:
-                    consecutive_voice_frames = 0
-
         for ch in channels_to_try:
             for sr in rates_to_try:
                 block_size = int(round(0.08 * sr))
                 try:
-                    with sd.InputStream(
-                        samplerate=sr,
-                        blocksize=block_size,
-                        channels=ch,
-                        dtype='int16',
-                        device=target_mic,
-                        callback=callback
-                    ):
-                        while not stop_event.is_set():
-                            sd.sleep(50)
+                    with suppress_c_stderr():
+                        with sd.InputStream(
+                            samplerate=sr,
+                            blocksize=block_size,
+                            channels=ch,
+                            dtype='int16',
+                            device=target_mic,
+                            callback=callback
+                        ):
+                            while not stop_event.is_set():
+                                sd.sleep(50)
                     return
                 except Exception:
                     continue
 
-    if enable_interrupt or wakeword_detector is not None:
+    if enable_interrupt and wakeword_detector is not None:
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 
