@@ -21,7 +21,7 @@ SAMPLE_RATE = 16000
 CHUNK_SIZE = 1280
 
 class WakeWordDetector:
-    def __init__(self, model_name="grey", threshold=0.2):
+    def __init__(self, model_name="max", threshold=0.2):
         """
         Initializes openWakeWord model.
 
