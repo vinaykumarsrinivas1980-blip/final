@@ -81,7 +81,7 @@ Set your free Groq API key (get a free key at [console.groq.com](https://console
 ```ini
 GROQ_API_KEY=gsk_...
 GROQ_MODEL=llama-3.3-70b-versatile
-TTS_VOICE=en-US-AvaNeural
+TTS_VOICE=en-IN-NeerjaNeural
 
 # Audio Device Overrides (Optional - leave blank for auto-detecting USB devices)
 MIC_DEVICE_INDEX=

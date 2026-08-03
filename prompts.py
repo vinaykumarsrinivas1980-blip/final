@@ -450,6 +450,7 @@ def get_canned_response(user_text: str) -> str | None:
         return None
 
     clean_input = normalize_text(user_text)
+    input_words = clean_input.split()
 
     for entry in DEFAULT_QUESTIONS:
         questions = entry.get("questions", [])
@@ -457,13 +458,22 @@ def get_canned_response(user_text: str) -> str | None:
 
         for q in questions:
             clean_q = normalize_text(q)
-            # Check exact match, substring match, or space-stripped match (e.g. guru dev vs gurudev)
-            no_space_input = clean_input.replace(" ", "")
-            no_space_q = clean_q.replace(" ", "")
+            q_words = clean_q.split()
 
-            if (clean_input == clean_q or 
-                (len(clean_q) > 3 and clean_q in clean_input) or 
-                (len(no_space_q) > 3 and no_space_q in no_space_input)):
+            # 1. Exact match
+            if clean_input == clean_q:
+                matched = True
+            # 2. Space-stripped exact match (e.g., "gurudev" vs "guru dev")
+            elif clean_input.replace(" ", "") == clean_q.replace(" ", ""):
+                matched = True
+            # 3. Substring match ONLY for longer multi-word phrases (3+ words and >10 chars)
+            # to avoid single short words like "time" matching "first time" or "lifetime"
+            elif len(q_words) >= 3 and len(clean_q) > 10 and clean_q in clean_input:
+                matched = True
+            else:
+                matched = False
+
+            if matched:
                 now = robot_now()
 
                 if answer == "CURRENT_DATE":
@@ -487,9 +497,9 @@ def get_canned_response(user_text: str) -> str | None:
 
 
 STOP_KEYWORDS = {
-    "stop", "shut up", "be quiet", "quiet", "pause", "wait", "cancel",
-    "nevermind", "never mind", "halt", "exit", "quit", "abort",
-    "roko", "rok", "ruko", "band karo", "shant", "shant ho jao", "bas", "chup", "chup ho jao",
+    "stop", "stopp", "shut", "shut up", "be quiet", "quiet", "pause", "wait", "cancel",
+    "nevermind", "never mind", "halt", "exit", "quit", "abort", "end", "finish", "enough",
+    "roko", "rok", "ruko", "band", "bandh", "band karo", "shant", "shant ho jao", "bas", "chup", "chup ho jao",
     "nillu", "nillisi", "saaku", "yenu beda"
 }
 
@@ -504,7 +514,9 @@ def is_stop_command(text: str) -> bool:
     clean = normalize_text(text)
     words = clean.split()
 
-    if clean in STOP_KEYWORDS or any(w in STOP_KEYWORDS for w in words):
+    if (clean in STOP_KEYWORDS or 
+        any(w in STOP_KEYWORDS for w in words) or 
+        any(k in clean for k in STOP_KEYWORDS if len(k) > 2)):
         return True
 
     return False

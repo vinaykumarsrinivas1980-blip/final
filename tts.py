@@ -16,9 +16,22 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+# Preset voice shortcuts for convenience
+VOICE_ALIASES = {
+    "indian_female": "en-IN-NeerjaNeural",
+    "indian_male": "en-IN-PrabhatNeural",
+    "indian_expressive": "en-IN-NeerjaExpressiveNeural",
+    "hindi_female": "hi-IN-SwaraNeural",
+    "hindi_male": "hi-IN-MadhurNeural",
+    "us_female": "en-US-AvaNeural",
+    "us_male": "en-US-BrianNeural",
+}
+
 class TextToSpeech:
-    def __init__(self, voice="en-US-AvaNeural"):
-        self.voice = voice or "en-US-AvaNeural"
+    def __init__(self, voice=None):
+        selected_voice = voice or os.getenv("TTS_VOICE") or "en-IN-NeerjaNeural"
+        # Resolve voice shortcut alias if provided
+        self.voice = VOICE_ALIASES.get(selected_voice.lower(), selected_voice)
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
 
     def _edge_tts_sync(self, text, output_filepath):

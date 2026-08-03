@@ -445,15 +445,16 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
-        speech_frames = []
-        last_speech_check_time = 0.0
+        speech_streak = 0
+        enable_voice_barge_in = os.getenv("ENABLE_VOICE_BARGE_IN", "false").lower() in ("true", "1", "yes")
+        barge_in_rms = float(os.getenv("BARGE_IN_RMS_THRESHOLD", "2500"))
 
         def callback(indata, frames, time_info, status):
-            nonlocal speech_frames, last_speech_check_time
+            nonlocal speech_streak
             if stop_event.is_set():
                 return
             
-            # 1. Check openWakeWord hits ("hey_jarvis", "alexa", etc.)
+            # 1. Check openWakeWord hits ("max", "hey_jarvis", "alexa", etc.)
             if wakeword_detector:
                 hit = wakeword_detector.predict_frame(indata)
                 if hit:
@@ -466,61 +467,22 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                     stop_event.set()
                     return
 
-            # 2. Check Voice Activity & Stop Keywords ("stop", "quiet", "pause", "ruko", "chup")
-            if len(indata) > 0:
+            # 2. Voice RMS Barge-In (Disabled by default to prevent speaker feedback echo from cutting off speech output)
+            if enable_voice_barge_in and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Spoken voice directly into microphone capsule (typically RMS > 650)
-                if rms > 650:
-                    mono_chunk = indata.mean(axis=1) if indata.ndim > 1 else indata.flatten()
-                    speech_frames.append(mono_chunk.copy())
-                    
-                    now = time.time()
-                    if (now - last_speech_check_time) > 0.4 and len(speech_frames) >= 5:
-                        last_speech_check_time = now
+                if rms > barge_in_rms:
+                    speech_streak += 1
+                    if speech_streak >= 3: # ~240ms of spoken voice into microphone
+                        print(f"\n🛑 [VOICE INTERRUPT] Voice stop/barge-in interrupt detected!")
+                        interrupted[0] = True
                         try:
-                            concat_speech = np.concatenate(speech_frames, axis=0)
-                            speech_frames.clear()
-                            
-                            temp_wav = "temp_interrupt_check.wav"
-                            os.makedirs(os.path.dirname(os.path.abspath(temp_wav)), exist_ok=True)
-                            with wave.open(temp_wav, 'wb') as wf:
-                                wf.setnchannels(1)
-                                wf.setsampwidth(2)
-                                wf.setframerate(16000)
-                                wf.writeframes(concat_speech.astype(np.int16).tobytes())
-
-                            from prompts import is_stop_command
-                            recognized_text = None
-                            if stt_engine:
-                                try:
-                                    recognized_text = stt_engine.transcribe(temp_wav)
-                                except Exception:
-                                    pass
-
-                            if recognized_text and is_stop_command(recognized_text):
-                                print(f"\n🛑 [VOICE INTERRUPT] Voice stop command detected: \"{recognized_text}\"!")
-                                interrupted[0] = True
-                                try:
-                                    pygame.mixer.music.stop()
-                                except Exception:
-                                    pass
-                                stop_event.set()
-                                return
-                            elif rms > 1250:
-                                # High volume speech override right into microphone
-                                print(f"\n🛑 [VOICE INTERRUPT] Direct voice interrupt detected!")
-                                interrupted[0] = True
-                                try:
-                                    pygame.mixer.music.stop()
-                                except Exception:
-                                    pass
-                                stop_event.set()
-                                return
+                            pygame.mixer.music.stop()
                         except Exception:
                             pass
+                        stop_event.set()
+                        return
                 else:
-                    if len(speech_frames) > 0 and (time.time() - last_speech_check_time) > 0.5:
-                        speech_frames.clear()
+                    speech_streak = max(0, speech_streak - 1)
 
         for ch in channels_to_try:
             for sr in rates_to_try:

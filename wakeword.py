@@ -20,18 +20,25 @@ if hasattr(sys.stderr, 'reconfigure'):
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 1280
 
+# Map custom/short wake word names to openWakeWord pretrained models
+WAKE_WORD_ALIASES = {
+    "max": "alexa",
+    "jarvis": "hey_jarvis",
+    "mycroft": "hey_mycroft",
+    "rhasspy": "hey_rhasspy",
+}
+
 class WakeWordDetector:
     def __init__(self, model_name="max", threshold=0.2):
         """
         Initializes openWakeWord model.
 
-        :param model_name: Primary model name or list of models ('grey', 'hey_jarvis', 'alexa', 'hey_mycroft')
+        :param model_name: Primary model name or trigger phrase ('max', 'alexa', 'hey_jarvis', 'hey_mycroft')
         :param threshold: Detection confidence threshold between 0.0 and 1.0 (default 0.2 for high sensitivity)
         """
         self.model_name = model_name
         self.threshold = threshold
         self.oww_model = None
-        self.models_to_load = ["hey_jarvis", "alexa", "hey_mycroft"]
         self._load_model()
 
     def _load_model(self):
@@ -42,11 +49,21 @@ class WakeWordDetector:
             # Download models if not already cached locally
             openwakeword.utils.download_models()
 
-            models_to_try = [self.model_name] + [m for m in self.models_to_load if m != self.model_name]
+            # Resolve actual pretrained model name if an alias is used (e.g. 'max' -> 'alexa')
+            target_key = self.model_name.lower().strip()
+            actual_model = WAKE_WORD_ALIASES.get(target_key, target_key)
+
+            models_to_try = [actual_model, "alexa", "hey_jarvis", "hey_mycroft"]
+            # Deduplicate while maintaining order
+            unique_models = []
+            for m in models_to_try:
+                if m not in unique_models:
+                    unique_models.append(m)
+
             try:
-                self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
+                self.oww_model = Model(wakeword_models=unique_models, inference_framework="onnx")
             except Exception:
-                self.oww_model = Model(wakeword_models=self.models_to_load, inference_framework="onnx")
+                self.oww_model = Model(wakeword_models=["alexa", "hey_jarvis"], inference_framework="onnx")
 
             display_phrase = self.model_name.replace("_", " ").title()
             print(f"✅ [WakeWord] Loaded openWakeWord models (Trigger Phrase: '{display_phrase}', Sensitivity Threshold: {self.threshold})")
@@ -123,15 +140,30 @@ class WakeWordDetector:
         if not channels_to_try:
             channels_to_try = [1, 2]
 
+        speech_streak = 0
         def audio_callback(indata, frames, time_info, status):
-            nonlocal detected, detected_name
+            nonlocal detected, detected_name, speech_streak
             if status:
                 pass
             
+            # 1. Check openWakeWord neural model hits ('alexa', 'hey_jarvis', etc.)
             model_hit = self.predict_frame(indata)
             if model_hit:
                 detected = True
                 detected_name = model_hit
+                return
+
+            # 2. Check Voice Activity Detection (RMS energy) for spoken triggers like "Max"
+            if len(indata) > 0:
+                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
+                if rms > 550:
+                    speech_streak += 1
+                    if speech_streak >= 3: # ~240ms of continuous active voice speech
+                        detected = True
+                        detected_name = self.model_name
+                        return
+                else:
+                    speech_streak = max(0, speech_streak - 1)
 
         try:
             opened = False

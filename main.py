@@ -25,7 +25,7 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 
-def print_banner(wake_word_enabled=False, wake_model="max"):
+def print_banner(wake_word_enabled=False, wake_model="max", voice_name="en-IN-NeerjaNeural"):
     display_model = wake_model.replace("_", " ").title()
     mode_str = f"Hands-Free Wake Word ('{display_model}')" if wake_word_enabled else "Push-To-Talk (ENTER)"
     banner = f"""
@@ -35,7 +35,7 @@ def print_banner(wake_word_enabled=False, wake_model="max"):
     Interaction Mode : {mode_str}
     STT Engine       : Groq Whisper / OpenAI Whisper API
     LLM Engine       : Groq API (Llama 3.3 70B)
-    TTS Engine       : Edge-TTS Neural / OpenAI TTS
+    TTS Engine       : Edge-TTS Neural (Voice: {voice_name})
     ============================================================
     """
     print(banner)
@@ -76,15 +76,7 @@ def main():
     else:
         wake_word_enabled = args.wake_word or os.getenv("WAKE_WORD_MODE", "true").lower() in ("true", "1", "yes")
 
-    print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model)
-
-
-    # Step 1: Detect Audio Hardware
-    mic_idx, spk_idx = get_device_indices()
-    print(f"🎙️  Microphone Device Index : {get_device_name(mic_idx, 'input')}")
-    print(f"🔊 Speaker Device Index    : {get_device_name(spk_idx, 'output')}")
-
-    # Step 2: Initialize API Services & Wake-Word
+    # Step 1: Initialize API Services & Wake-Word
     print("\n⏳ Initializing API Clients & Engines...")
     try:
         stt_engine = SpeechToText()
@@ -95,11 +87,18 @@ def main():
         if wake_word_enabled:
             wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=0.5)
 
-        print("✅ All services initialized successfully.\n")
+        print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice)
+        print("✅ All services initialized successfully.")
+        print(f"🔊 Active TTS Voice: {tts_engine.voice}\n")
     except Exception as e:
         print(f"❌ Failed to initialize services: {e}", file=sys.stderr)
         print("Please check your .env file keys and dependencies.")
         sys.exit(1)
+
+    # Step 2: Detect Audio Hardware
+    mic_idx, spk_idx = get_device_indices()
+    print(f"🎙️  Microphone Device Index : {get_device_name(mic_idx, 'input')}")
+    print(f"🔊 Speaker Device Index    : {get_device_name(spk_idx, 'output')}")
 
     print("------------------------------------------------------------")
     if wake_word_enabled:
