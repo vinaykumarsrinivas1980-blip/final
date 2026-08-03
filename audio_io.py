@@ -445,20 +445,25 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
-        speech_streak = 0
-        enable_voice_barge_in = os.getenv("ENABLE_VOICE_BARGE_IN", "false").lower() in ("true", "1", "yes")
-        barge_in_rms = float(os.getenv("BARGE_IN_RMS_THRESHOLD", "4000"))
+        # Import prompts for stop command verification
+        try:
+            from prompts import is_stop_command
+        except Exception:
+            def is_stop_command(txt): return any(w in txt.lower() for w in ["stop", "quiet", "cancel", "ruko", "band"])
+
+        pcm_frames = []
+        last_stt_check_time = 0.0
 
         def callback(indata, frames, time_info, status):
-            nonlocal speech_streak
+            nonlocal last_stt_check_time
             if stop_event.is_set():
                 return
 
-            # 1. Check openWakeWord neural model hits ("max", "hey_jarvis", "alexa", etc.)
+            # 1. Check openWakeWord hits with sensitive playback threshold (0.10) during active TTS playback
             if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.25)
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.10)
                 if hit:
-                    print(f"\n⚡ [WAKE WORD INTERRUPT] Interrupted by wake word '{hit}'!")
+                    print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
                     interrupted[0] = True
                     try:
                         pygame.mixer.music.stop()
@@ -467,22 +472,46 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                     stop_event.set()
                     return
 
-            # 2. Optional Voice RMS Barge-In (Disabled by default so speaker output does not self-interrupt playback)
-            if enable_voice_barge_in and len(indata) > 0:
+            # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel") during playback via STT
+            if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                if rms > barge_in_rms:
-                    speech_streak += 1
-                    if speech_streak >= 4:  # ~320ms of continuous loud speech
-                        print(f"\n🛑 [VOICE INTERRUPT] Voice stop/barge-in interrupt detected!")
-                        interrupted[0] = True
-                        try:
-                            pygame.mixer.music.stop()
-                        except Exception:
-                            pass
-                        stop_event.set()
-                        return
+                # Detect active spoken voice audio (RMS energy > 1800)
+                if rms > 1800:
+                    pcm_frames.append(indata.copy())
+                    current_time = time.time()
+                    
+                    # Process accumulated ~0.6s chunk if active voice continues
+                    if len(pcm_frames) >= 8 and (current_time - last_stt_check_time) > 0.6:
+                        last_stt_check_time = current_time
+                        audio_chunk = np.concatenate(pcm_frames, axis=0)
+                        pcm_frames.clear()
+
+                        def async_barge_in_check(chunk_data):
+                            try:
+                                temp_path = "temp_barge.wav"
+                                with wave.open(temp_path, 'wb') as wf:
+                                    wf.setnchannels(1 if chunk_data.ndim == 1 else chunk_data.shape[1])
+                                    wf.setsampwidth(2)
+                                    wf.setframerate(SAMPLE_RATE)
+                                    wf.writeframes(chunk_data.tobytes())
+
+                                txt = stt_engine.transcribe(temp_path)
+                                if txt and (is_stop_command(txt) or any(w in txt.lower().split() for w in ["stop", "quiet", "cancel", "wait", "ruko", "band", "chup"])):
+                                    print(f"\n🛑 [VOICE STOP INTERRUPT] Playback stopped by voice command (\"{txt}\")!")
+                                    interrupted[0] = True
+                                    try:
+                                        pygame.mixer.music.stop()
+                                    except Exception:
+                                        pass
+                                    stop_event.set()
+                            except Exception:
+                                pass
+
+                        t_barge = threading.Thread(target=async_barge_in_check, args=(audio_chunk,), daemon=True)
+                        t_barge.start()
                 else:
-                    speech_streak = max(0, speech_streak - 1)
+                    if len(pcm_frames) > 20:
+                        pcm_frames.clear()
 
         for ch in channels_to_try:
             for sr in rates_to_try:

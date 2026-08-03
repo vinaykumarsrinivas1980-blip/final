@@ -85,7 +85,7 @@ def main():
         
         wakeword_detector = None
         if wake_word_enabled:
-            wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=0.5)
+            wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=0.20)
 
         print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice)
         print("✅ All services initialized successfully.")
