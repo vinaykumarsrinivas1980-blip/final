@@ -153,18 +153,6 @@ class WakeWordDetector:
                 detected_name = model_hit
                 return
 
-            # 2. Check Voice Activity Detection (RMS energy) for spoken triggers like "Max"
-            if len(indata) > 0:
-                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                if rms > 550:
-                    speech_streak += 1
-                    if speech_streak >= 3: # ~240ms of continuous active voice speech
-                        detected = True
-                        detected_name = self.model_name
-                        return
-                else:
-                    speech_streak = max(0, speech_streak - 1)
-
         try:
             opened = False
             last_err = None

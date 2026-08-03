@@ -158,8 +158,14 @@ def main():
 
             # 2a. VOICE INTERRUPT / STOP COMMAND CHECK
             if is_stop_command(user_text):
-                print(f"\n🛑 [STOP COMMAND] Voice interrupt detected (\"{user_text}\"). Resetting to listening mode...\n")
-                continue
+                clean_stop = user_text.lower().strip()
+                if any(kw in clean_stop for kw in ["exit", "quit", "goodbye", "bye", "shutdown"]):
+                    print(f"\n🛑 [STOP COMMAND] Exiting voice assistant per user request (\"{user_text}\"). Goodbye!\n")
+                    break
+                else:
+                    print(f"\n🛑 [STOP COMMAND] Stop command detected (\"{user_text}\"). Resetting to wake-word mode...\n")
+                    time.sleep(1.0)
+                    continue
 
             # 3. LLM INFERENCE
             print("🧠 [3/4 THINKING] Requesting response from LLM...")

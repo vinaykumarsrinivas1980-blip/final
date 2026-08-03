@@ -512,11 +512,19 @@ def is_stop_command(text: str) -> bool:
         return False
 
     clean = normalize_text(text)
-    words = clean.split()
+    words = set(clean.split())
 
-    if (clean in STOP_KEYWORDS or 
-        any(w in STOP_KEYWORDS for w in words) or 
-        any(k in clean for k in STOP_KEYWORDS if len(k) > 2)):
+    # 1. Exact full text match
+    if clean in STOP_KEYWORDS:
         return True
+
+    # 2. Word-by-word match
+    if any(w in STOP_KEYWORDS for w in words):
+        return True
+
+    # 3. Multi-word phrase match (e.g. "shut up", "be quiet", "band karo")
+    for k in STOP_KEYWORDS:
+        if " " in k and k in clean:
+            return True
 
     return False
