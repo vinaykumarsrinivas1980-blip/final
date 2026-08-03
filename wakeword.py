@@ -73,10 +73,12 @@ class WakeWordDetector:
             print("   pip install scikit-learn onnxruntime && pip install openwakeword --no-deps", file=sys.stderr)
             raise e
 
-    def predict_frame(self, indata):
+    def predict_frame(self, indata, override_threshold=None):
         """Processes an audio chunk (mono/stereo, any sample rate) and returns triggered model name or None."""
         if not self.oww_model:
             return None
+
+        thresh = override_threshold if override_threshold is not None else self.threshold
 
         # Convert to mono if 2D array (stereo)
         if indata.ndim > 1 and indata.shape[1] > 1:
@@ -92,7 +94,7 @@ class WakeWordDetector:
         prediction = self.oww_model.predict(audio_frame)
 
         for m_name, score in prediction.items():
-            if score >= self.threshold:
+            if score >= thresh:
                 return m_name
         return None
 
