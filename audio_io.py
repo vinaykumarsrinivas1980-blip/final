@@ -446,27 +446,17 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             channels_to_try = [1, 2]
 
         speech_streak = 0
-        baseline_rms_list = []
-        baseline_rms = 800.0
+        enable_voice_barge_in = os.getenv("ENABLE_VOICE_BARGE_IN", "false").lower() in ("true", "1", "yes")
+        barge_in_rms = float(os.getenv("BARGE_IN_RMS_THRESHOLD", "4000"))
 
         def callback(indata, frames, time_info, status):
-            nonlocal speech_streak, baseline_rms
+            nonlocal speech_streak
             if stop_event.is_set():
                 return
-            
-            # Calculate current frame RMS energy
-            rms = 0.0
-            if len(indata) > 0:
-                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
 
-            # Track baseline speaker audio RMS during initial frames of playback
-            if len(baseline_rms_list) < 10 and rms > 50:
-                baseline_rms_list.append(rms)
-                baseline_rms = float(np.mean(baseline_rms_list))
-
-            # 1. Check openWakeWord hits with sensitive playback threshold (0.15) to overcome speaker background sound
+            # 1. Check openWakeWord neural model hits ("max", "hey_jarvis", "alexa", etc.)
             if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.15)
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.25)
                 if hit:
                     print(f"\n⚡ [WAKE WORD INTERRUPT] Interrupted by wake word '{hit}'!")
                     interrupted[0] = True
@@ -477,22 +467,22 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                     stop_event.set()
                     return
 
-            # 2. Adaptive Spoken Voice Interruption (detects user speaking over TTS speaker output)
-            # Triggers if mic RMS energy spikes > 2.2x the baseline speaker output level (min threshold 1500)
-            dynamic_threshold = max(1500.0, baseline_rms * 2.2)
-            if rms > dynamic_threshold:
-                speech_streak += 1
-                if speech_streak >= 2:  # ~160ms of active spoken voice over speaker
-                    print(f"\n🛑 [VOICE INTERRUPT] Voice stop/barge-in interrupt detected!")
-                    interrupted[0] = True
-                    try:
-                        pygame.mixer.music.stop()
-                    except Exception:
-                        pass
-                    stop_event.set()
-                    return
-            else:
-                speech_streak = max(0, speech_streak - 1)
+            # 2. Optional Voice RMS Barge-In (Disabled by default so speaker output does not self-interrupt playback)
+            if enable_voice_barge_in and len(indata) > 0:
+                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
+                if rms > barge_in_rms:
+                    speech_streak += 1
+                    if speech_streak >= 4:  # ~320ms of continuous loud speech
+                        print(f"\n🛑 [VOICE INTERRUPT] Voice stop/barge-in interrupt detected!")
+                        interrupted[0] = True
+                        try:
+                            pygame.mixer.music.stop()
+                        except Exception:
+                            pass
+                        stop_event.set()
+                        return
+                else:
+                    speech_streak = max(0, speech_streak - 1)
 
         for ch in channels_to_try:
             for sr in rates_to_try:
