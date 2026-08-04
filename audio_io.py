@@ -506,9 +506,12 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
             # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel", "chup") during playback
             if stt_engine and len(indata) > 0:
-                rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect active human voice near mic (RMS energy > 300)
-                if rms > 300:
+                audio_float = indata.astype(np.float32)
+                rms = float(np.sqrt(np.mean(audio_float**2)))
+                max_amp = float(np.max(np.abs(audio_float)))
+
+                # Detect active human voice near mic (RMS > 250 or max amplitude peak > 8000)
+                if rms > 250 or max_amp > 8000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
@@ -537,13 +540,18 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     wf.writeframes(chunk_data.tobytes())
 
                                 # Quietly check transcribed speech for stop command
-                                old_stdout = sys.stdout
-                                try:
-                                    sys.stdout = open(os.devnull, 'w')
+                                class SuppressStdout:
+                                    def __enter__(self):
+                                        self._orig = sys.stdout
+                                        sys.stdout = open(os.devnull, 'w')
+                                    def __exit__(self, exc_type, exc_val, exc_tb):
+                                        try:
+                                            sys.stdout.close()
+                                        finally:
+                                            sys.stdout = self._orig
+
+                                with SuppressStdout():
                                     txt = stt_engine.transcribe(temp_path)
-                                finally:
-                                    sys.stdout.close()
-                                    sys.stdout = old_stdout
 
                                 import re
                                 clean_txt = txt.lower().strip() if txt else ""
@@ -553,10 +561,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 if clean_txt and (any(w in clean_words for w in stop_keywords) or any(w in clean_txt for w in ["stop", "ruko", "quiet", "cancel"])):
                                     print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!")
                                     interrupted[0] = True
-                                    try:
-                                        sd.stop()
-                                    except Exception:
-                                        pass
+                                    sd.stop()
                                     try:
                                         pygame.mixer.music.stop()
                                     except Exception:
@@ -568,7 +573,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk, actual_sr), daemon=True)
                         t_barge.start()
                 else:
-                    if len(pcm_frames) > 20:
+                    if len(pcm_frames) > 15:
                         pcm_frames.clear()
 
         for ch in channels_to_try:
@@ -618,38 +623,31 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 
-    output_stream = None
     if pcm_data is not None and len(pcm_data) > 0:
-        channels = 1 if pcm_data.ndim == 1 else pcm_data.shape[1]
         try:
             with suppress_c_stderr():
-                output_stream = sd.OutputStream(
-                    samplerate=play_sr,
-                    channels=channels,
-                    dtype='int16',
-                    device=target_spk
-                )
-                output_stream.start()
+                sd.play(pcm_data, samplerate=play_sr, device=target_spk)
 
-            chunk_samples = int(round(play_sr * 0.05))  # 50ms chunks
-            total_samples = len(pcm_data)
-            curr_idx = 0
-
-            while curr_idx < total_samples and not stop_event.is_set():
-                if check_keypress_interrupt():
-                    interrupted[0] = True
-                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+            while not stop_event.is_set():
+                try:
+                    stream = sd.get_stream()
+                    if stream is None or not stream.active:
+                        break
+                except Exception:
                     break
 
-                end_idx = min(curr_idx + chunk_samples, total_samples)
-                chunk = pcm_data[curr_idx:end_idx]
-                output_stream.write(chunk)
-                curr_idx = end_idx
+                if check_keypress_interrupt():
+                    interrupted[0] = True
+                    sd.stop()
+                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+                    break
+                time.sleep(0.02)
 
         except KeyboardInterrupt:
             interrupted[0] = True
+            sd.stop()
         except Exception:
-            # Fallback to pygame music play if output_stream fails
+            # Fallback to pygame music play if sounddevice fails
             try:
                 pygame.mixer.music.load(filepath)
                 pygame.mixer.music.play()
@@ -664,12 +662,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 pass
         finally:
             stop_event.set()
-            if output_stream:
-                try:
-                    output_stream.stop()
-                    output_stream.close()
-                except Exception:
-                    pass
+            sd.stop()
     else:
         # Fallback to pygame music play if PCM decoding failed
         try:
