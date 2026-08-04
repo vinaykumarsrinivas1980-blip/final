@@ -481,43 +481,25 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         frame_counter = 0
 
         def callback(indata, frames, time_info, status):
-            nonlocal last_stt_check_time, frame_counter
+            nonlocal last_stt_check_time
             if stop_event.is_set():
                 return
 
-            frame_counter += 1
-            # Throttle neural prediction to every 2nd frame (160ms) to prevent CPU starvation on Raspberry Pi
-            if frame_counter % 2 != 0:
-                return
-
-            # 1. Check openWakeWord hits with threshold (0.50) to avoid false triggers from speaker playback
-            if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.50)
-                if hit:
-                    print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
-                    interrupted[0] = True
-                    try:
-                        pygame.mixer.music.stop()
-                    except Exception:
-                        pass
-                    stop_event.set()
-                    return
-
-            # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel") during playback via STT
+            # Listen EXCLUSIVELY for spoken STOP commands ("stop", "ruko", "be quiet", "cancel", "chup") during playback
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect strong active spoken voice audio near mic (RMS energy > 3500)
-                if rms > 3500:
+                # Detect active human voice near mic (RMS energy > 2500)
+                if rms > 2500:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~1.0s chunk if active user voice continues
-                    if len(pcm_frames) >= 12 and (current_time - last_stt_check_time) > 1.0:
+                    # Process accumulated ~0.8s speech chunk
+                    if len(pcm_frames) >= 10 and (current_time - last_stt_check_time) > 0.8:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
 
-                        def async_barge_in_check(chunk_data):
+                        def async_stop_check(chunk_data):
                             try:
                                 temp_path = "temp_barge.wav"
                                 with wave.open(temp_path, 'wb') as wf:
@@ -526,7 +508,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     wf.setframerate(SAMPLE_RATE)
                                     wf.writeframes(chunk_data.tobytes())
 
-                                # Suppress stdout during barge-in test to prevent Whisper hallucination clutter
+                                # Quietly check transcribed speech for stop command
                                 old_stdout = sys.stdout
                                 try:
                                     sys.stdout = open(os.devnull, 'w')
@@ -535,8 +517,8 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     sys.stdout.close()
                                     sys.stdout = old_stdout
 
-                                if txt and (is_stop_command(txt) or any(w in txt.lower().split() for w in ["stop", "quiet", "cancel", "wait", "ruko", "band", "chup"])):
-                                    print(f"\n🛑 [VOICE STOP INTERRUPT] Playback stopped by voice command (\"{txt}\")!")
+                                if txt and (is_stop_command(txt) or any(w in txt.lower().split() for w in ["stop", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt"])):
+                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!")
                                     interrupted[0] = True
                                     try:
                                         pygame.mixer.music.stop()
@@ -546,7 +528,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             except Exception:
                                 pass
 
-                        t_barge = threading.Thread(target=async_barge_in_check, args=(audio_chunk,), daemon=True)
+                        t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk,), daemon=True)
                         t_barge.start()
                 else:
                     if len(pcm_frames) > 20:

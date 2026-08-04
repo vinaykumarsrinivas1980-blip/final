@@ -188,16 +188,14 @@ def main():
             speech_file = tts_engine.synthesize(response_text, "response_audio.mp3")
             tts_latency = time.time() - tts_start
 
-            # 5. AUDIO PLAYBACK
+            # 5. AUDIO PLAYBACK (LISTENING FOR SPOKEN 'STOP' COMMANDS ONLY)
             play_start = time.time()
-            enable_barge_in = os.getenv("ENABLE_BARGE_IN", "false").lower() in ("true", "1", "yes") or args.barge_in
             was_interrupted = play_audio(
                 speech_file,
                 device_index=spk_idx,
-                enable_interrupt=enable_barge_in,
-                mic_device_index=mic_idx if enable_barge_in else None,
-                wakeword_detector=wakeword_detector if enable_barge_in else None,
-                stt_engine=stt_engine if enable_barge_in else None
+                enable_interrupt=True,
+                mic_device_index=mic_idx,
+                stt_engine=stt_engine
             )
             play_latency = time.time() - play_start
 
