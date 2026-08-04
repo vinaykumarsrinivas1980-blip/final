@@ -596,101 +596,40 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 except Exception:
                     continue
 
-    target_spk = get_working_device_index('output', device_index)
-
-    # Decode MP3 / WAV audio into 44.1kHz PCM numpy array for sounddevice playback
-    pcm_data = None
-    play_sr = 44100
-    try:
-        import pygame
-        if not pygame.mixer.get_init():
-            try:
-                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
-            except Exception:
-                pygame.mixer.init()
-        snd = pygame.mixer.Sound(filepath)
-        raw_bytes = snd.get_raw()
-        pcm_data = np.frombuffer(raw_bytes, dtype=np.int16)
-        if pcm_data.size % 2 == 0:
-            pcm_data = pcm_data.reshape(-1, 2)
-    except Exception:
-        try:
-            play_sr, pcm_data = wavfile.read(filepath)
-        except Exception:
-            pcm_data = None
-
+    # Start background mic listener thread if enabled
     if (enable_interrupt or wakeword_detector is not None) and stt_engine:
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 
-    if pcm_data is not None and len(pcm_data) > 0:
-        try:
-            with suppress_c_stderr():
-                sd.play(pcm_data, samplerate=play_sr, device=target_spk)
+    # Play audio using pygame.mixer.music (direct manageable playback stream)
+    try:
+        pygame.mixer.music.load(filepath)
+        pygame.mixer.music.play()
 
-            while not stop_event.is_set():
-                try:
-                    stream = sd.get_stream()
-                    if stream is None or not stream.active:
-                        break
-                except Exception:
-                    break
-
-                if check_keypress_interrupt():
-                    interrupted[0] = True
-                    sd.stop()
-                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
-                    break
-                time.sleep(0.02)
-
-        except KeyboardInterrupt:
-            interrupted[0] = True
-            sd.stop()
-        except Exception:
-            # Fallback to pygame music play if sounddevice fails
-            try:
-                pygame.mixer.music.load(filepath)
-                pygame.mixer.music.play()
-                while pygame.mixer.music.get_busy() and not stop_event.is_set():
-                    if check_keypress_interrupt():
-                        interrupted[0] = True
-                        pygame.mixer.music.stop()
-                        print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
-                        break
-                    time.sleep(0.05)
-            except Exception:
-                pass
-        finally:
-            stop_event.set()
-            sd.stop()
-    else:
-        # Fallback to pygame music play if PCM decoding failed
-        try:
-            pygame.mixer.music.load(filepath)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy() and not stop_event.is_set():
-                if check_keypress_interrupt():
-                    interrupted[0] = True
-                    pygame.mixer.music.stop()
-                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
-                    break
-                time.sleep(0.05)
-        except KeyboardInterrupt:
-            interrupted[0] = True
-            try:
+        while pygame.mixer.music.get_busy() and not stop_event.is_set():
+            if check_keypress_interrupt():
+                interrupted[0] = True
                 pygame.mixer.music.stop()
-            except Exception:
-                pass
+                print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+                break
+            time.sleep(0.02)
+    except KeyboardInterrupt:
+        interrupted[0] = True
+        try:
+            pygame.mixer.music.stop()
         except Exception:
             pass
-        finally:
-            stop_event.set()
-            try:
-                pygame.mixer.music.stop()
-            except Exception:
-                pass
+    except Exception as err:
+        print(f"⚠️ Playback error: {err}", file=sys.stderr)
+    finally:
+        stop_event.set()
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+        except Exception:
+            pass
 
-    return interrupted[0]
+    return interrupted[0] or stop_event.is_set()
 
 
 
