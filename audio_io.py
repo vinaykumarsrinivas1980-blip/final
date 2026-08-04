@@ -485,16 +485,16 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
-            # Listen EXCLUSIVELY for spoken STOP commands ("stop", "ruko", "be quiet", "cancel", "chup") during playback
+            # Listen EXCLUSIVELY for spoken STOP command ("stop") during playback
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect active human voice near mic (RMS energy > 2500)
-                if rms > 2500:
+                # Detect normal spoken voice near mic (RMS energy > 350)
+                if rms > 350:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.8s speech chunk
-                    if len(pcm_frames) >= 10 and (current_time - last_stt_check_time) > 0.8:
+                    # Process accumulated ~0.5s speech chunk for rapid response
+                    if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
@@ -518,8 +518,9 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     sys.stdout = old_stdout
 
                                 import re
-                                clean_words = set(re.sub(r'[^\w\s]', '', txt.lower()).split())
-                                if txt and "stop" in clean_words:
+                                clean_txt = txt.lower().strip() if txt else ""
+                                clean_words = set(re.sub(r'[^\w\s]', '', clean_txt).split())
+                                if clean_txt and ("stop" in clean_words or "stop" in clean_txt):
                                     print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"stop\")!")
                                     interrupted[0] = True
                                     try:
