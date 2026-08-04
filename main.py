@@ -6,8 +6,11 @@ Interactive Push-to-Talk CLI loop wiring together Audio I/O, STT, LLM, and TTS.
 import os
 import sys
 import time
-from dotenv import load_dotenv
 
+# Hide Pygame community support prompt & suppress C ALSA warnings on load
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+
+from dotenv import load_dotenv
 import argparse
 from audio_io import list_audio_devices, find_usb_device, get_working_device_index, record_push_to_talk, record_smart_audio, record_timed_audio, play_audio, boost_alsa_system_volume
 from stt import SpeechToText

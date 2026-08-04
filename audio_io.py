@@ -10,6 +10,28 @@ import time
 import wave
 import threading
 import numpy as np
+
+# Hide Pygame community support prompt
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+
+# Suppress Linux ALSA / PortAudio C-library error messages globally
+if sys.platform != 'win32':
+    try:
+        from ctypes import CFUNCTYPE, c_char_p, c_int, cdll
+        ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+        def _alsa_no_error_handler(filename, line, function, err, fmt):
+            pass
+        _c_alsa_handler = ERROR_HANDLER_FUNC(_alsa_no_error_handler)
+        for alsa_lib in ['libasound.so.2', 'libasound.so']:
+            try:
+                asound = cdll.LoadLibrary(alsa_lib)
+                asound.snd_lib_error_set_handler(_c_alsa_handler)
+                break
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 import sounddevice as sd
 from scipy import signal
 from scipy.io import wavfile
