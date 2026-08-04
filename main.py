@@ -9,7 +9,7 @@ import time
 from dotenv import load_dotenv
 
 import argparse
-from audio_io import list_audio_devices, find_usb_device, get_working_device_index, record_push_to_talk, record_smart_audio, record_timed_audio, play_audio
+from audio_io import list_audio_devices, find_usb_device, get_working_device_index, record_push_to_talk, record_smart_audio, record_timed_audio, play_audio, boost_alsa_system_volume
 from stt import SpeechToText
 from llm import LLMEngine
 from tts import TextToSpeech
@@ -95,7 +95,8 @@ def main():
         print("Please check your .env file keys and dependencies.")
         sys.exit(1)
 
-    # Step 2: Detect Audio Hardware
+    # Step 2: Detect Audio Hardware & Boost System Volume
+    boost_alsa_system_volume()
     mic_idx, spk_idx = get_device_indices()
     print(f"🎙️  Microphone Device Index : {get_device_name(mic_idx, 'input')}")
     print(f"🔊 Speaker Device Index    : {get_device_name(spk_idx, 'output')}")

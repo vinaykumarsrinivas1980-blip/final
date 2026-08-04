@@ -562,14 +562,20 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         except Exception:
             pass
     except Exception as e:
-        # Fallback to sounddevice if pygame mixer encounters file format issue
-        try:
-            sr, data = wavfile.read(filepath) if filepath.endswith('.wav') else (None, None)
-            if data is not None:
-                sd.play(data, sr)
-                sd.wait()
-        except Exception:
-            pass
+        # Fallback to system CLI players on Linux / Raspberry Pi if pygame encounters issue
+        if sys.platform != 'win32':
+            for player_cmd in [f"mpg123 -q '{filepath}'", f"ffplay -nodisp -autoexit -loglevel quiet '{filepath}'", f"mpv --no-terminal '{filepath}'"]:
+                ret = os.system(player_cmd)
+                if ret == 0:
+                    break
+        else:
+            try:
+                sr, data = wavfile.read(filepath) if filepath.endswith('.wav') else (None, None)
+                if data is not None:
+                    sd.play(data, sr)
+                    sd.wait()
+            except Exception:
+                pass
     finally:
         stop_event.set()
         try:

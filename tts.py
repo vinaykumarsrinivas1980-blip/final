@@ -31,6 +31,8 @@ VOICE_ALIASES = {
     "hindi_male": "hi-IN-MadhurNeural",
     "us_female": "en-US-AvaNeural",
     "us_male": "en-US-BrianNeural",
+    "uk_female": "en-GB-SoniaNeural",
+    "uk_male": "en-GB-RyanNeural",
 }
 
 class TextToSpeech:

@@ -116,7 +116,7 @@ class LLMEngine:
                     model=m,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=250
+                    max_tokens=120
                 )
 
                 reply = completion.choices[0].message.content.strip()
