@@ -432,7 +432,10 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     import pygame
     try:
         if not pygame.mixer.get_init():
-            pygame.mixer.init()
+            try:
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
+            except Exception:
+                pygame.mixer.init()
     except Exception:
         pass
 
@@ -475,15 +478,21 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
         pcm_frames = []
         last_stt_check_time = 0.0
+        frame_counter = 0
 
         def callback(indata, frames, time_info, status):
-            nonlocal last_stt_check_time
+            nonlocal last_stt_check_time, frame_counter
             if stop_event.is_set():
                 return
 
-            # 1. Check openWakeWord hits with realistic threshold (0.45) to avoid false triggers from speaker playback
+            frame_counter += 1
+            # Throttle neural prediction to every 2nd frame (160ms) to prevent CPU starvation on Raspberry Pi
+            if frame_counter % 2 != 0:
+                return
+
+            # 1. Check openWakeWord hits with threshold (0.50) to avoid false triggers from speaker playback
             if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.45)
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.50)
                 if hit:
                     print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
                     interrupted[0] = True
