@@ -480,6 +480,8 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         last_stt_check_time = 0.0
         frame_counter = 0
 
+        actual_sr = 16000
+
         def callback(indata, frames, time_info, status):
             nonlocal last_stt_check_time
             if stop_event.is_set():
@@ -499,8 +501,16 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
 
-                        def async_stop_check(chunk_data):
+                        def async_stop_check(chunk_data, sr_used):
                             try:
+                                # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz)
+                                if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
+                                    num_samples = int(round(len(chunk_data) * SAMPLE_RATE / float(sr_used)))
+                                    if chunk_data.ndim > 1:
+                                        chunk_data = signal.resample(chunk_data.astype(np.float32), num_samples, axis=0).astype(DTYPE)
+                                    else:
+                                        chunk_data = signal.resample(chunk_data.astype(np.float32), num_samples).astype(DTYPE)
+
                                 temp_path = "temp_barge.wav"
                                 with wave.open(temp_path, 'wb') as wf:
                                     wf.setnchannels(1 if chunk_data.ndim == 1 else chunk_data.shape[1])
@@ -531,7 +541,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             except Exception:
                                 pass
 
-                        t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk,), daemon=True)
+                        t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk, actual_sr), daemon=True)
                         t_barge.start()
                 else:
                     if len(pcm_frames) > 20:
@@ -550,6 +560,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             device=target_mic,
                             callback=callback
                         ):
+                            actual_sr = sr
                             while not stop_event.is_set():
                                 sd.sleep(50)
                     return
