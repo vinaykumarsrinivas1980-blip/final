@@ -510,13 +510,13 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 rms = float(np.sqrt(np.mean(audio_float**2)))
                 max_amp = float(np.max(np.abs(audio_float)))
 
-                # Detect active human voice near mic (RMS > 250 or max amplitude peak > 8000)
-                if rms > 250 or max_amp > 8000:
+                # Detect active human voice near mic (RMS > 180 or max amplitude peak > 4000)
+                if rms > 180 or max_amp > 4000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.4s speech chunk for rapid response
-                    if len(pcm_frames) >= 5 and (current_time - last_stt_check_time) > 0.4:
+                    # Process accumulated ~0.35s speech chunk for rapid response
+                    if len(pcm_frames) >= 4 and (current_time - last_stt_check_time) > 0.35:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
@@ -556,14 +556,14 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 import re
                                 clean_txt = txt.lower().strip() if txt else ""
                                 clean_words = set(re.sub(r'[^\w\s]', '', clean_txt).split())
-                                stop_keywords = {"stop", "stopp", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt", "enough"}
+                                stop_keywords = {"stop", "stopp", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt", "enough", "shut", "pause"}
 
-                                if clean_txt and (any(w in clean_words for w in stop_keywords) or any(w in clean_txt for w in ["stop", "ruko", "quiet", "cancel"])):
-                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!")
+                                if clean_txt and (any(w in clean_words for w in stop_keywords) or any(w in clean_txt for w in ["stop", "ruko", "quiet", "cancel", "shut"])):
+                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!", flush=True)
                                     interrupted[0] = True
-                                    sd.stop()
                                     try:
                                         pygame.mixer.music.stop()
+                                        pygame.mixer.music.unload()
                                     except Exception:
                                         pass
                                     stop_event.set()
@@ -573,8 +573,11 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk, actual_sr), daemon=True)
                         t_barge.start()
                 else:
-                    if len(pcm_frames) > 15:
+                    if len(pcm_frames) > 10:
                         pcm_frames.clear()
+
+        opened_stream = False
+        last_stream_err = None
 
         for ch in channels_to_try:
             for sr in rates_to_try:
@@ -590,11 +593,16 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             callback=callback
                         ):
                             actual_sr = sr
+                            opened_stream = True
                             while not stop_event.is_set():
                                 sd.sleep(50)
                     return
-                except Exception:
+                except Exception as err:
+                    last_stream_err = err
                     continue
+
+        if not opened_stream and last_stream_err:
+            print(f"⚠️ [MIC INTERRUPT WARNING] Could not start mic interrupt listener: {last_stream_err}", file=sys.stderr)
 
     # Start background mic listener thread if enabled
     if (enable_interrupt or wakeword_detector is not None) and stt_engine:
