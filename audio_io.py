@@ -459,9 +459,9 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
-            # 1. Check openWakeWord hits with sensitive playback threshold (0.10) during active TTS playback
+            # 1. Check openWakeWord hits with realistic threshold (0.45) to avoid false triggers from speaker playback
             if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.10)
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.45)
                 if hit:
                     print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
                     interrupted[0] = True
@@ -475,13 +475,13 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel") during playback via STT
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect active spoken voice audio (RMS energy > 1800)
-                if rms > 1800:
+                # Detect strong active spoken voice audio near mic (RMS energy > 3500)
+                if rms > 3500:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.6s chunk if active voice continues
-                    if len(pcm_frames) >= 8 and (current_time - last_stt_check_time) > 0.6:
+                    # Process accumulated ~1.0s chunk if active user voice continues
+                    if len(pcm_frames) >= 12 and (current_time - last_stt_check_time) > 1.0:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
@@ -495,7 +495,15 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     wf.setframerate(SAMPLE_RATE)
                                     wf.writeframes(chunk_data.tobytes())
 
-                                txt = stt_engine.transcribe(temp_path)
+                                # Suppress stdout during barge-in test to prevent Whisper hallucination clutter
+                                old_stdout = sys.stdout
+                                try:
+                                    sys.stdout = open(os.devnull, 'w')
+                                    txt = stt_engine.transcribe(temp_path)
+                                finally:
+                                    sys.stdout.close()
+                                    sys.stdout = old_stdout
+
                                 if txt and (is_stop_command(txt) or any(w in txt.lower().split() for w in ["stop", "quiet", "cancel", "wait", "ruko", "band", "chup"])):
                                     print(f"\n🛑 [VOICE STOP INTERRUPT] Playback stopped by voice command (\"{txt}\")!")
                                     interrupted[0] = True

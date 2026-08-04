@@ -18,6 +18,12 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 # Preset voice shortcuts for convenience
 VOICE_ALIASES = {
+    "alloy": "en-US-AvaNeural",
+    "echo": "en-US-BrianNeural",
+    "fable": "en-US-EricNeural",
+    "onyx": "en-US-ChristopherNeural",
+    "nova": "en-US-JennyNeural",
+    "shimmer": "en-US-MichelleNeural",
     "indian_female": "en-IN-NeerjaNeural",
     "indian_male": "en-IN-PrabhatNeural",
     "indian_expressive": "en-IN-NeerjaExpressiveNeural",
@@ -37,11 +43,16 @@ class TextToSpeech:
     def _edge_tts_sync(self, text, output_filepath):
         """Asynchronously run edge-tts to generate high quality speech with volume boost."""
         import edge_tts
-        async def _speak():
-            communicate = edge_tts.Communicate(text, self.voice, volume="+50%")
+        async def _speak(v):
+            communicate = edge_tts.Communicate(text, v, volume="+50%")
             await communicate.save(output_filepath)
         
-        asyncio.run(_speak())
+        try:
+            asyncio.run(_speak(self.voice))
+        except Exception:
+            # Fallback to standard US voice if custom voice name is unsupported
+            fallback_voice = "en-IN-NeerjaNeural" if "in" in self.voice.lower() else "en-US-AvaNeural"
+            asyncio.run(_speak(fallback_voice))
 
     def synthesize(self, text, output_filepath="temp_response.mp3"):
         """

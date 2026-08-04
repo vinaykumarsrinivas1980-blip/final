@@ -93,9 +93,14 @@ class WakeWordDetector:
         audio_frame = np.clip(audio_frame * 1.5, -32768, 32767).astype(np.int16)
         prediction = self.oww_model.predict(audio_frame)
 
+        target_key = self.model_name.lower().strip()
+        actual_target = WAKE_WORD_ALIASES.get(target_key, target_key)
+
         for m_name, score in prediction.items():
             if score >= thresh:
-                return m_name
+                # Prioritize target model or high confidence trigger
+                if m_name == actual_target or m_name == target_key or score >= max(thresh * 1.5, 0.40):
+                    return m_name
         return None
 
     def listen_for_wakeword(self, device_index=None, timeout=None):
@@ -122,11 +127,12 @@ class WakeWordDetector:
         rates_to_try = [SAMPLE_RATE]
         if target_device is not None:
             try:
-                dev_info = sd.query_devices(target_device, 'input')
-                max_chans = int(dev_info.get('max_input_channels', 2))
-                hw_sr = int(dev_info.get('default_samplerate', 44100))
-                if hw_sr not in rates_to_try:
-                    rates_to_try.append(hw_sr)
+                with suppress_c_stderr():
+                    dev_info = sd.query_devices(target_device, 'input')
+                    max_chans = int(dev_info.get('max_input_channels', 2))
+                    hw_sr = int(dev_info.get('default_samplerate', 44100))
+                    if hw_sr not in rates_to_try:
+                        rates_to_try.append(hw_sr)
             except Exception:
                 pass
 
