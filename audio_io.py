@@ -517,8 +517,10 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     sys.stdout.close()
                                     sys.stdout = old_stdout
 
-                                if txt and (is_stop_command(txt) or any(w in txt.lower().split() for w in ["stop", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt"])):
-                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!")
+                                import re
+                                clean_words = set(re.sub(r'[^\w\s]', '', txt.lower()).split())
+                                if txt and "stop" in clean_words:
+                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"stop\")!")
                                     interrupted[0] = True
                                     try:
                                         pygame.mixer.music.stop()
