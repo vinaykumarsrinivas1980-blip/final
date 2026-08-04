@@ -74,6 +74,7 @@ def main():
     parser.add_argument("--wake-model", type=str, default=default_model, help=f"openWakeWord model name (default: {default_model})")
     default_voice = os.getenv("TTS_VOICE", "en-IN-NeerjaNeural")
     parser.add_argument("--voice", "-v", type=str, default=default_voice, help=f"TTS voice (default: {default_voice})")
+    parser.add_argument("--barge-in", action="store_true", help="Enable experimental voice barge-in listener during audio playback")
     args = parser.parse_args()
 
     if args.push_to_talk:
@@ -187,9 +188,17 @@ def main():
             speech_file = tts_engine.synthesize(response_text, "response_audio.mp3")
             tts_latency = time.time() - tts_start
 
-            # 5. AUDIO PLAYBACK (WITH OPENWAKEWORD & VOICE 'STOP' BARGE-IN INTERRUPT)
+            # 5. AUDIO PLAYBACK
             play_start = time.time()
-            was_interrupted = play_audio(speech_file, device_index=spk_idx, enable_interrupt=wake_word_enabled, mic_device_index=mic_idx, wakeword_detector=wakeword_detector, stt_engine=stt_engine)
+            enable_barge_in = os.getenv("ENABLE_BARGE_IN", "false").lower() in ("true", "1", "yes") or args.barge_in
+            was_interrupted = play_audio(
+                speech_file,
+                device_index=spk_idx,
+                enable_interrupt=enable_barge_in,
+                mic_device_index=mic_idx if enable_barge_in else None,
+                wakeword_detector=wakeword_detector if enable_barge_in else None,
+                stt_engine=stt_engine if enable_barge_in else None
+            )
             play_latency = time.time() - play_start
 
 
