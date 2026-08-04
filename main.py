@@ -139,9 +139,9 @@ def main():
             pipeline_start = time.time()
 
             # 1. AUDIO RECORDING (Dynamic VAD in hands-free mode)
-            max_rec_sec = float(os.getenv("MAX_RECORD_SECONDS", "8.0"))
+            max_rec_sec = float(os.getenv("MAX_RECORD_SECONDS", "5.0"))
             if wake_word_enabled:
-                audio_file, rec_dur = record_smart_audio("input_audio.wav", device_index=mic_idx, silence_timeout=1.5, max_duration=max_rec_sec)
+                audio_file, rec_dur = record_smart_audio("input_audio.wav", device_index=mic_idx, silence_timeout=1.0, max_duration=max_rec_sec)
             else:
                 print("\n🎙️  [1/4 LISTENING] Recording... Press [ENTER] to stop.")
                 audio_file, rec_dur = record_push_to_talk("input_audio.wav", device_index=mic_idx)
