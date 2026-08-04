@@ -4,9 +4,19 @@ Uses openWakeWord to detect custom wake phrases ("hey_jarvis", "alexa", etc.) lo
 100% Free, Privacy-Friendly, and requires NO API keys or internet connection.
 """
 
+import os
 import sys
 import time
 import numpy as np
+
+# Suppress ONNXRuntime C-level GPU discovery warnings on ARM / Raspberry Pi
+os.environ["ORT_LOGGING_LEVEL"] = "3"
+try:
+    import onnxruntime as ort
+    ort.set_default_logger_severity(3)
+except Exception:
+    pass
+
 import sounddevice as sd
 from scipy import signal
 from audio_io import get_working_device_index, suppress_c_stderr
@@ -60,10 +70,11 @@ class WakeWordDetector:
                 if m not in unique_models:
                     unique_models.append(m)
 
-            try:
-                self.oww_model = Model(wakeword_models=unique_models, inference_framework="onnx")
-            except Exception:
-                self.oww_model = Model(wakeword_models=["alexa", "hey_jarvis"], inference_framework="onnx")
+            with suppress_c_stderr():
+                try:
+                    self.oww_model = Model(wakeword_models=unique_models, inference_framework="onnx")
+                except Exception:
+                    self.oww_model = Model(wakeword_models=["alexa", "hey_jarvis"], inference_framework="onnx")
 
             display_phrase = self.model_name.replace("_", " ").title()
             print(f"✅ [WakeWord] Loaded openWakeWord models (Trigger Phrase: '{display_phrase}', Sensitivity Threshold: {self.threshold})")
@@ -124,21 +135,21 @@ class WakeWordDetector:
 
         # Build list of sample rates and channel counts supported by hardware
         max_chans = 2
-        rates_to_try = [SAMPLE_RATE]
+        rates_to_try = []
         if target_device is not None:
             try:
                 with suppress_c_stderr():
                     dev_info = sd.query_devices(target_device, 'input')
                     max_chans = int(dev_info.get('max_input_channels', 2))
                     hw_sr = int(dev_info.get('default_samplerate', 44100))
-                    if hw_sr not in rates_to_try:
+                    if hw_sr > 0:
                         rates_to_try.append(hw_sr)
             except Exception:
                 pass
 
-        for fallback_sr in [44100, 48000, 22050, 8000]:
-            if fallback_sr not in rates_to_try:
-                rates_to_try.append(fallback_sr)
+        for preferred_sr in [44100, 48000, 16000, 22050, 8000]:
+            if preferred_sr not in rates_to_try:
+                rates_to_try.append(preferred_sr)
 
         channels_to_try = []
         if max_chans >= 1:
@@ -171,6 +182,7 @@ class WakeWordDetector:
                     block_size = int(round(0.08 * sr))
                     try:
                         with suppress_c_stderr():
+                            sd.check_input_settings(device=target_device, samplerate=sr, channels=ch, dtype='int16')
                             with sd.InputStream(
                                 samplerate=sr,
                                 blocksize=block_size,
@@ -195,10 +207,11 @@ class WakeWordDetector:
             # Attempt 2: Fallback to system default input device (device=None) if target_device failed
             if not opened and target_device is not None:
                 for ch in [1, 2]:
-                    for sr in [16000, 44100, 48000]:
+                    for sr in [44100, 48000, 16000]:
                         block_size = int(round(0.08 * sr))
                         try:
                             with suppress_c_stderr():
+                                sd.check_input_settings(device=None, samplerate=sr, channels=ch, dtype='int16')
                                 with sd.InputStream(
                                     samplerate=sr,
                                     blocksize=block_size,

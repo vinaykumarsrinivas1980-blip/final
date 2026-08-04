@@ -7,8 +7,10 @@ import os
 import sys
 import time
 
-# Hide Pygame community support prompt & suppress C ALSA warnings on load
+# Hide Pygame community support prompt & suppress C ALSA/ONNXRuntime warnings on load
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+os.environ["ORT_LOGGING_LEVEL"] = "3"
+os.environ["ONNXRUNTIME_LOG_LEVEL"] = "3"
 
 from dotenv import load_dotenv
 import argparse

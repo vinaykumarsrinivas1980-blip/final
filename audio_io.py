@@ -203,18 +203,19 @@ class AudioRecorder:
 
         target_device = self.device_index if self.device_index is not None else get_working_device_index('input')
 
-        # Determine sample rates supported by microphone
-        rates_to_try = [self.sample_rate]
+        # Determine sample rates supported by microphone (prioritize hardware default sample rate)
+        rates_to_try = []
         if target_device is not None:
             try:
-                dev_info = sd.query_devices(target_device, 'input')
-                hw_sr = int(dev_info.get('default_samplerate', 44100))
-                if hw_sr not in rates_to_try:
-                    rates_to_try.append(hw_sr)
+                with suppress_c_stderr():
+                    dev_info = sd.query_devices(target_device, 'input')
+                    hw_sr = int(dev_info.get('default_samplerate', 44100))
+                    if hw_sr > 0:
+                        rates_to_try.append(hw_sr)
             except Exception:
                 pass
 
-        for fallback_sr in [44100, 48000, 22050, 8000]:
+        for fallback_sr in [44100, 48000, 16000, 22050, 8000]:
             if fallback_sr not in rates_to_try:
                 rates_to_try.append(fallback_sr)
 
@@ -228,6 +229,8 @@ class AudioRecorder:
             for sr in rates_to_try:
                 try:
                     with suppress_c_stderr():
+                        # Verify setting validity quietly without triggering C stderr output
+                        sd.check_input_settings(device=target_device, samplerate=sr, channels=ch, dtype=DTYPE)
                         with sd.InputStream(
                             samplerate=sr,
                             channels=ch,
@@ -584,6 +587,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 block_size = int(round(0.08 * sr))
                 try:
                     with suppress_c_stderr():
+                        sd.check_input_settings(device=target_mic, samplerate=sr, channels=ch, dtype='int16')
                         with sd.InputStream(
                             samplerate=sr,
                             blocksize=block_size,
