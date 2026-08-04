@@ -311,7 +311,7 @@ def record_push_to_talk(output_filepath="temp_input.wav", device_index=None):
     print(f"💾 Audio saved: {filepath} ({duration:.2f} seconds)")
     return filepath, duration
 
-def record_smart_audio(output_filepath="temp_input.wav", device_index=None, silence_timeout=1.0, max_duration=5.0):
+def record_smart_audio(output_filepath="temp_input.wav", device_index=None, silence_timeout=1.5, max_duration=5.0):
     """
     Dynamic VAD Audio Recording.
     Automatically starts recording, detects speech onset, and stops as soon as
@@ -423,7 +423,9 @@ def check_keypress_interrupt():
 def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None, stt_engine=None):
     """
     Plays an MP3 or WAV audio file through the specified speaker device index.
-    Supports 100% reliable voice barge-in interruption via openWakeWord ('Hey Jarvis' / 'Alexa'), voice stop commands ('stop'), and keypresses.
+    Uses explicit sd.OutputStream for playback so the mic sd.InputStream can run
+    simultaneously on Raspberry Pi without PortAudio stream conflicts.
+    Supports voice stop command ('stop') and keypress interrupts.
     Returns True if playback was interrupted, False if completed normally.
     """
     if not os.path.exists(filepath):
@@ -441,9 +443,11 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
     interrupted = [False]
     stop_event = threading.Event()
+    mic_ready_event = threading.Event()
 
     def mic_interrupt_listener():
-        """Background listener monitoring mic for openWakeWord ('Hey Jarvis') and voice stop commands ('stop', 'ruko', etc.) during playback."""
+        """Background mic listener for spoken 'stop' command during playback.
+        Signals mic_ready_event once the InputStream is successfully opened."""
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
@@ -470,15 +474,9 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         if not channels_to_try:
             channels_to_try = [1, 2]
 
-        # Import prompts for stop command verification
-        try:
-            from prompts import is_stop_command
-        except Exception:
-            def is_stop_command(txt): return any(w in txt.lower() for w in ["stop", "quiet", "cancel", "ruko", "band"])
-
         pcm_frames = []
         last_stt_check_time = 0.0
-        frame_counter = 0
+        listen_start_time = [0.0]
 
         actual_sr = 16000
 
@@ -487,14 +485,19 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
+            # Skip first 0.5s to avoid capturing speaker playback startup burst
+            if listen_start_time[0] > 0 and (time.time() - listen_start_time[0]) < 0.5:
+                return
+
             # Listen EXCLUSIVELY for spoken STOP command ("stop") during playback
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect normal spoken voice near mic (RMS energy > 350)
-                if rms > 350:
+                # RMS threshold 1500 filters out speaker echo bleed-through (which is typically 300-800)
+                # A human speaking "stop" directly into the mic at 15-30cm produces RMS > 1500-3000
+                if rms > 1500:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
-                    
+
                     # Process accumulated ~0.5s speech chunk for rapid response
                     if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
                         last_stt_check_time = current_time
@@ -503,7 +506,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
                         def async_stop_check(chunk_data, sr_used):
                             try:
-                                # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz)
+                                # Resample audio chunk to 16000Hz if captured at hardware rate
                                 if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
                                     num_samples = int(round(len(chunk_data) * SAMPLE_RATE / float(sr_used)))
                                     if chunk_data.ndim > 1:
@@ -518,29 +521,22 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     wf.setframerate(SAMPLE_RATE)
                                     wf.writeframes(chunk_data.tobytes())
 
-                                # Quietly check transcribed speech for stop command
-                                old_stdout = sys.stdout
+                                # Transcribe without polluting main thread stdout
+                                import io as _io
+                                _capture = _io.StringIO()
+                                _saved = sys.stdout
                                 try:
-                                    sys.stdout = open(os.devnull, 'w')
+                                    sys.stdout = _capture
                                     txt = stt_engine.transcribe(temp_path)
                                 finally:
-                                    sys.stdout.close()
-                                    sys.stdout = old_stdout
+                                    sys.stdout = _saved
 
                                 import re
                                 clean_txt = txt.lower().strip() if txt else ""
                                 clean_words = set(re.sub(r'[^\w\s]', '', clean_txt).split())
-                                if clean_txt and ("stop" in clean_words or "stop" in clean_txt):
-                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"stop\")!")
+                                if clean_txt and ("stop" in clean_words):
+                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by voice command (\"stop\")!")
                                     interrupted[0] = True
-                                    try:
-                                        sd.stop()
-                                    except Exception:
-                                        pass
-                                    try:
-                                        pygame.mixer.music.stop()
-                                    except Exception:
-                                        pass
                                     stop_event.set()
                             except Exception:
                                 pass
@@ -565,68 +561,159 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             callback=callback
                         ):
                             actual_sr = sr
+                            listen_start_time[0] = time.time()
+                            mic_ready_event.set()  # Signal that mic is open and ready
                             while not stop_event.is_set():
-                                sd.sleep(50)
+                                time.sleep(0.05)
                     return
                 except Exception:
                     continue
 
-    target_spk = get_working_device_index('output', device_index)
+        # If no mic config worked, still let playback proceed
+        mic_ready_event.set()
 
-    # Decode MP3 / WAV audio into 44.1kHz PCM numpy array for sounddevice playback
+    # --- Decode MP3/WAV audio into PCM numpy array ---
     pcm_data = None
     play_sr = 44100
+    play_channels = 2
     try:
-        import pygame
-        if not pygame.mixer.get_init():
-            try:
-                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
-            except Exception:
-                pygame.mixer.init()
+        mixer_info = pygame.mixer.get_init()
+        if mixer_info:
+            play_sr = mixer_info[0]       # actual frequency
+            play_channels = mixer_info[2]  # actual channels (1 or 2)
         snd = pygame.mixer.Sound(filepath)
         raw_bytes = snd.get_raw()
         pcm_data = np.frombuffer(raw_bytes, dtype=np.int16)
-        if pcm_data.size % 2 == 0:
+        # Reshape based on actual mixer channel count
+        if play_channels >= 2 and pcm_data.size % 2 == 0:
             pcm_data = pcm_data.reshape(-1, 2)
+        elif play_channels == 1:
+            pcm_data = pcm_data.reshape(-1, 1)
     except Exception:
         try:
             play_sr, pcm_data = wavfile.read(filepath)
         except Exception:
             pcm_data = None
 
+    # --- Start mic listener FIRST (before playback) so it has time to open ---
     if (enable_interrupt or wakeword_detector is not None) and stt_engine:
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
+        # Wait up to 500ms for mic stream to establish before starting playback
+        mic_ready_event.wait(timeout=0.5)
 
+    # --- Play audio using explicit OutputStream (not sd.play) ---
     if pcm_data is not None and len(pcm_data) > 0:
-        try:
-            with suppress_c_stderr():
-                sd.play(pcm_data, samplerate=play_sr, device=target_spk)
+        out_channels = pcm_data.shape[1] if pcm_data.ndim > 1 else 1
+        target_spk = get_working_device_index('output', device_index)
 
-            while (sd.get_stream().active if sd.get_stream() else False) and not stop_event.is_set():
-                if check_keypress_interrupt():
-                    interrupted[0] = True
-                    sd.stop()
-                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+        # Determine speaker-supported sample rate and channels
+        spk_rates = [play_sr]
+        spk_channels_list = [out_channels]
+        if target_spk is not None:
+            try:
+                spk_info = sd.query_devices(target_spk, 'output')
+                hw_sr = int(spk_info.get('default_samplerate', 44100))
+                max_out_ch = int(spk_info.get('max_output_channels', 2))
+                if hw_sr not in spk_rates:
+                    spk_rates.append(hw_sr)
+                if out_channels > max_out_ch:
+                    spk_channels_list = [max_out_ch]
+                elif max_out_ch not in spk_channels_list:
+                    spk_channels_list.append(max_out_ch)
+            except Exception:
+                pass
+        for fsr in [44100, 48000, 22050, 16000]:
+            if fsr not in spk_rates:
+                spk_rates.append(fsr)
+
+        played = False
+        for out_sr in spk_rates:
+            for out_ch in spk_channels_list:
+                if played:
                     break
-                time.sleep(0.05)
-        except KeyboardInterrupt:
-            interrupted[0] = True
-            sd.stop()
-        except Exception as err:
-            # Fallback to pygame music play if sounddevice fails
+                try:
+                    # Prepare data for this output config
+                    play_buf = pcm_data
+                    # Resample if playback rate differs from decoded rate
+                    if out_sr != play_sr and len(play_buf) > 0:
+                        num_out = int(round(len(play_buf) * out_sr / float(play_sr)))
+                        if play_buf.ndim > 1:
+                            play_buf = signal.resample(play_buf.astype(np.float32), num_out, axis=0).astype(np.int16)
+                        else:
+                            play_buf = signal.resample(play_buf.astype(np.float32), num_out).astype(np.int16)
+
+                    # Adjust channels if needed
+                    if play_buf.ndim == 1 and out_ch >= 2:
+                        play_buf = np.column_stack([play_buf, play_buf])
+                    elif play_buf.ndim > 1 and play_buf.shape[1] == 2 and out_ch == 1:
+                        play_buf = play_buf.mean(axis=1).astype(np.int16)
+
+                    # Ensure 2D for OutputStream
+                    if play_buf.ndim == 1:
+                        play_buf = play_buf.reshape(-1, 1)
+
+                    blocksize = 2048
+                    write_pos = [0]
+
+                    def output_callback(outdata, frames, time_info, status):
+                        start = write_pos[0]
+                        end = start + frames
+                        if end <= len(play_buf):
+                            outdata[:] = play_buf[start:end]
+                            write_pos[0] = end
+                        elif start < len(play_buf):
+                            valid = len(play_buf) - start
+                            outdata[:valid] = play_buf[start:]
+                            outdata[valid:] = 0
+                            write_pos[0] = len(play_buf)
+                        else:
+                            outdata[:] = 0
+                            raise sd.CallbackStop()
+
+                    with suppress_c_stderr():
+                        with sd.OutputStream(
+                            samplerate=out_sr,
+                            blocksize=blocksize,
+                            channels=play_buf.shape[1],
+                            dtype='int16',
+                            device=target_spk,
+                            callback=output_callback
+                        ) as out_stream:
+                            played = True
+                            while out_stream.active and not stop_event.is_set():
+                                if check_keypress_interrupt():
+                                    interrupted[0] = True
+                                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+                                    break
+                                time.sleep(0.05)
+
+                except KeyboardInterrupt:
+                    interrupted[0] = True
+                except Exception:
+                    continue
+
+            if played:
+                break
+
+        if not played:
+            # Fallback to pygame if no sounddevice output config worked
             try:
                 pygame.mixer.music.load(filepath)
                 pygame.mixer.music.play()
                 while pygame.mixer.music.get_busy() and not stop_event.is_set():
+                    if check_keypress_interrupt():
+                        interrupted[0] = True
+                        pygame.mixer.music.stop()
+                        print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped!")
+                        break
                     time.sleep(0.05)
             except Exception:
                 pass
-        finally:
-            stop_event.set()
-            sd.stop()
+
+        stop_event.set()
     else:
-        # Fallback to pygame music play if PCM decoding failed
+        # Fallback to pygame if PCM decoding failed entirely
         try:
             pygame.mixer.music.load(filepath)
             pygame.mixer.music.play()
@@ -634,15 +721,11 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 if check_keypress_interrupt():
                     interrupted[0] = True
                     pygame.mixer.music.stop()
-                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+                    print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped!")
                     break
                 time.sleep(0.05)
         except KeyboardInterrupt:
             interrupted[0] = True
-            try:
-                pygame.mixer.music.stop()
-            except Exception:
-                pass
         except Exception:
             pass
         finally:
