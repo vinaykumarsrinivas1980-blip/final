@@ -487,29 +487,47 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
-            # Listen EXCLUSIVELY for spoken STOP command ("stop") during playback
+            # 1. Check openWakeWord neural hits ("alexa", "hey_jarvis", "max") during playback
+            if wakeword_detector:
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.35)
+                if hit:
+                    print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
+                    interrupted[0] = True
+                    try:
+                        sd.stop()
+                    except Exception:
+                        pass
+                    try:
+                        pygame.mixer.music.stop()
+                    except Exception:
+                        pass
+                    stop_event.set()
+                    return
+
+            # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel", "chup") during playback
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # Detect normal spoken voice near mic (RMS energy > 350)
-                if rms > 350:
+                # Detect active human voice near mic (RMS energy > 300)
+                if rms > 300:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.5s speech chunk for rapid response
-                    if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
+                    # Process accumulated ~0.4s speech chunk for rapid response
+                    if len(pcm_frames) >= 5 and (current_time - last_stt_check_time) > 0.4:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
 
                         def async_stop_check(chunk_data, sr_used):
                             try:
-                                # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz)
+                                # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz) with clipping fix
                                 if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
                                     num_samples = int(round(len(chunk_data) * SAMPLE_RATE / float(sr_used)))
                                     if chunk_data.ndim > 1:
-                                        chunk_data = signal.resample(chunk_data.astype(np.float32), num_samples, axis=0).astype(DTYPE)
+                                        resample_float = signal.resample(chunk_data.astype(np.float32), num_samples, axis=0)
                                     else:
-                                        chunk_data = signal.resample(chunk_data.astype(np.float32), num_samples).astype(DTYPE)
+                                        resample_float = signal.resample(chunk_data.astype(np.float32), num_samples)
+                                    chunk_data = np.clip(resample_float, -32768, 32767).astype(DTYPE)
 
                                 temp_path = "temp_barge.wav"
                                 with wave.open(temp_path, 'wb') as wf:
@@ -530,8 +548,10 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 import re
                                 clean_txt = txt.lower().strip() if txt else ""
                                 clean_words = set(re.sub(r'[^\w\s]', '', clean_txt).split())
-                                if clean_txt and ("stop" in clean_words or "stop" in clean_txt):
-                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"stop\")!")
+                                stop_keywords = {"stop", "stopp", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt", "enough"}
+
+                                if clean_txt and (any(w in clean_words for w in stop_keywords) or any(w in clean_txt for w in ["stop", "ruko", "quiet", "cancel"])):
+                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!")
                                     interrupted[0] = True
                                     try:
                                         sd.stop()
