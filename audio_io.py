@@ -447,20 +447,20 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
-        rates_to_try = [16000]
+        rates_to_try = []
         if target_mic is not None:
             try:
                 dev_info = sd.query_devices(target_mic, 'input')
                 max_chans = int(dev_info.get('max_input_channels', 2))
                 hw_sr = int(dev_info.get('default_samplerate', 44100))
-                if hw_sr not in rates_to_try:
+                if hw_sr > 0:
                     rates_to_try.append(hw_sr)
             except Exception:
                 pass
 
-        for fallback_sr in [44100, 48000, 22050, 8000]:
-            if fallback_sr not in rates_to_try:
-                rates_to_try.append(fallback_sr)
+        for preferred_sr in [44100, 48000, 16000, 22050, 8000]:
+            if preferred_sr not in rates_to_try:
+                rates_to_try.append(preferred_sr)
 
         channels_to_try = []
         if max_chans >= 1:
