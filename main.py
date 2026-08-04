@@ -72,6 +72,8 @@ def main():
     parser.add_argument("--push-to-talk", "-p", action="store_true", help="Use manual ENTER key push-to-talk mode")
     default_model = os.getenv("WAKE_MODEL", "max")
     parser.add_argument("--wake-model", type=str, default=default_model, help=f"openWakeWord model name (default: {default_model})")
+    default_voice = os.getenv("TTS_VOICE", "en-IN-NeerjaNeural")
+    parser.add_argument("--voice", "-v", type=str, default=default_voice, help=f"TTS voice (default: {default_voice})")
     args = parser.parse_args()
 
     if args.push_to_talk:
@@ -84,7 +86,7 @@ def main():
     try:
         stt_engine = SpeechToText()
         llm_engine = LLMEngine()
-        tts_engine = TextToSpeech()
+        tts_engine = TextToSpeech(voice=args.voice)
         
         wakeword_detector = None
         if wake_word_enabled:

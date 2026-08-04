@@ -18,12 +18,12 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 # Preset voice shortcuts for convenience
 VOICE_ALIASES = {
-    "alloy": "en-US-AvaNeural",
-    "echo": "en-US-BrianNeural",
-    "fable": "en-US-EricNeural",
-    "onyx": "en-US-ChristopherNeural",
-    "nova": "en-US-JennyNeural",
-    "shimmer": "en-US-MichelleNeural",
+    "alloy": "en-IN-NeerjaNeural",
+    "echo": "en-IN-PrabhatNeural",
+    "fable": "en-IN-NeerjaExpressiveNeural",
+    "onyx": "en-IN-PrabhatNeural",
+    "nova": "en-IN-NeerjaNeural",
+    "shimmer": "en-IN-NeerjaNeural",
     "indian_female": "en-IN-NeerjaNeural",
     "indian_male": "en-IN-PrabhatNeural",
     "indian_expressive": "en-IN-NeerjaExpressiveNeural",
@@ -52,8 +52,8 @@ class TextToSpeech:
         try:
             asyncio.run(_speak(self.voice))
         except Exception:
-            # Fallback to standard US voice if custom voice name is unsupported
-            fallback_voice = "en-IN-NeerjaNeural" if "in" in self.voice.lower() else "en-US-AvaNeural"
+            # Fallback to standard Indian voice if custom voice name is unsupported
+            fallback_voice = "en-IN-NeerjaNeural"
             asyncio.run(_speak(fallback_voice))
 
     def synthesize(self, text, output_filepath="temp_response.mp3"):
