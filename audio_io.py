@@ -492,14 +492,15 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             # Listen EXCLUSIVELY for spoken STOP command ("stop") during playback
             if stt_engine and len(indata) > 0:
                 rms = float(np.sqrt(np.mean(indata.astype(np.float32)**2)))
-                # RMS threshold 1500 filters out speaker echo bleed-through (which is typically 300-800)
-                # A human speaking "stop" directly into the mic at 15-30cm produces RMS > 1500-3000
-                if rms > 1500:
+                # RMS threshold 4000 definitively filters out speaker echo bleed-through
+                # (speaker echo on Pi USB mic is typically 300-2000 RMS even at max volume).
+                # A human speaking "stop" LOUDLY directly into the mic produces RMS > 4000.
+                if rms > 4000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
 
-                    # Process accumulated ~0.5s speech chunk for rapid response
-                    if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
+                    # Require 10+ high-RMS frames (~0.8s sustained speech) to avoid short echo bursts
+                    if len(pcm_frames) >= 10 and (current_time - last_stt_check_time) > 0.8:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
