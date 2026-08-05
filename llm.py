@@ -31,11 +31,15 @@ class LLMEngine:
         :param max_memory_exchanges: Number of past user/assistant turns to retain.
         """
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "GROQ_API_KEY missing! Please set it in your .env file or pass it to LLMEngine()."
-            )
-        self.client = Groq(api_key=self.api_key)
+        self.client = None
+        if self.api_key:
+            try:
+                self.client = Groq(api_key=self.api_key)
+            except Exception as e:
+                print(f"⚠️ Groq client initialization warning: {e}", file=sys.stderr)
+        else:
+            print("⚠️ GROQ_API_KEY missing! LLMEngine will rely on local canned responses.", file=sys.stderr)
+
         self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self.system_prompt = system_prompt or SYSTEM_PROMPT
         self.max_memory = max_memory_exchanges * 2  # 2 messages per exchange (user + assistant)
@@ -55,12 +59,19 @@ class LLMEngine:
         return []
 
     def _save_history(self):
-        """Saves current conversation history to disk."""
+        """Saves current conversation history atomically to disk."""
+        tmp_file = f"{HISTORY_FILE}.tmp"
         try:
-            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(self.history, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_file, HISTORY_FILE)
         except Exception as e:
             print(f"⚠️ Could not save history file: {e}", file=sys.stderr)
+            if os.path.exists(tmp_file):
+                try:
+                    os.remove(tmp_file)
+                except Exception:
+                    pass
 
     def _truncate_history(self):
         """Ensures conversation history does not exceed memory limit."""
@@ -96,6 +107,9 @@ class LLMEngine:
         # Inject real-time system date and time into system prompt
         now_str = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
         dynamic_system_prompt = f"{self.system_prompt} Current system date and time: {now_str}."
+
+        if not self.client:
+            return "I don't have access to my online LLM API key right now, but I am ready to answer local questions!"
 
         # Build full messages payload with system prompt + memory
         messages = [{"role": "system", "content": dynamic_system_prompt}]

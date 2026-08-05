@@ -45,15 +45,20 @@ WAKE_WORD_ALIASES = {
 }
 
 class WakeWordDetector:
-    def __init__(self, model_name="max", threshold=0.2):
+    def __init__(self, model_name="max", threshold=None):
         """
         Initializes openWakeWord model.
 
         :param model_name: Primary model name or trigger phrase ('max', 'alexa', 'hey_jarvis', 'hey_mycroft')
-        :param threshold: Detection confidence threshold between 0.0 and 1.0 (default 0.2 for high sensitivity)
+        :param threshold: Detection confidence threshold between 0.0 and 1.0 (default 0.40)
         """
         self.model_name = model_name
-        self.threshold = threshold
+        if threshold is None:
+            try:
+                threshold = float(os.getenv("WAKE_THRESHOLD", "0.40"))
+            except Exception:
+                threshold = 0.40
+        self.threshold = max(0.05, min(0.95, threshold))
         self.oww_model = None
         self._load_model()
 

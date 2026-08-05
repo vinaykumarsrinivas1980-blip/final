@@ -102,6 +102,8 @@ def main():
     parser.add_argument("--push-to-talk", "-p", action="store_true", help="Use manual ENTER key push-to-talk mode")
     default_model = os.getenv("WAKE_MODEL", "max")
     parser.add_argument("--wake-model", type=str, default=default_model, help=f"openWakeWord model name (default: {default_model})")
+    default_threshold = float(os.getenv("WAKE_THRESHOLD", "0.40"))
+    parser.add_argument("--wake-threshold", type=float, default=default_threshold, help=f"Wake word confidence threshold (default: {default_threshold})")
     default_voice = os.getenv("TTS_VOICE", "en-IN-NeerjaNeural")
     parser.add_argument("--voice", "-v", type=str, default=default_voice, help=f"TTS voice (default: {default_voice})")
     parser.add_argument("--barge-in", action="store_true", help="Enable experimental voice barge-in listener during audio playback")
@@ -121,7 +123,7 @@ def main():
         
         wakeword_detector = None
         if wake_word_enabled:
-            wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=0.20)
+            wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=args.wake_threshold)
 
         print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice)
         print("✅ All services initialized successfully.")
@@ -226,15 +228,15 @@ def main():
             speech_file = tts_engine.synthesize(response_text, "response_audio.mp3")
             tts_latency = time.time() - tts_start
 
-            # 5. AUDIO PLAYBACK (LISTENING FOR WAKE WORDS AND STOP COMMANDS)
+            # 5. AUDIO PLAYBACK (MIC ACTIVE: LISTEN STRICTLY FOR SPOKEN BREAK COMMANDS TO INTERRUPT)
             play_start = time.time()
             was_interrupted = play_audio(
                 speech_file,
                 device_index=spk_idx,
                 enable_interrupt=True,
                 mic_device_index=mic_idx,
-                wakeword_detector=wakeword_detector,
-                stt_engine=stt_engine
+                wakeword_detector=None,  # Do not trigger on wake-word during speech output
+                stt_engine=stt_engine     # Listen exclusively for spoken break commands ("break", "take a break")
             )
             play_latency = time.time() - play_start
 
@@ -257,12 +259,14 @@ def main():
             print(f"  • Playback Time : {play_latency:.2f}s")
             print(f"  • Total Turn    : {total_latency:.2f}s (Processing: {stt_latency + llm_latency + tts_latency:.2f}s)")
             print("-" * 50)
+            in_active_session = False
 
         except KeyboardInterrupt:
             print("\n👋 Voice assistant stopped by user interrupt. Goodbye!")
             break
         except Exception as err:
             print(f"\n❌ Pipeline Exception Error: {err}", file=sys.stderr)
+            in_active_session = False
             if not wake_word_enabled:
                 print("Continuing loop... Press ENTER to try again.")
 

@@ -441,7 +441,7 @@ def normalize_and_boost_audio(data, gain_db=6.0):
 
 
 def flush_keypress_buffer():
-    """Flushes stale Windows console keypresses from msvcrt buffer."""
+    """Flushes stale console keypresses from buffer (Windows & Linux/Raspberry Pi)."""
     if sys.platform == 'win32':
         import msvcrt
         while msvcrt.kbhit():
@@ -449,15 +449,30 @@ def flush_keypress_buffer():
                 msvcrt.getch()
             except Exception:
                 break
+    else:
+        try:
+            import select
+            while select.select([sys.stdin], [], [], 0.0)[0]:
+                sys.stdin.read(1)
+        except Exception:
+            pass
 
 def check_keypress_interrupt():
-    """Returns True if user has pressed ENTER or key in Windows CLI."""
+    """Returns True if user has pressed ENTER or key in CLI (Windows & Linux/Raspberry Pi)."""
     if sys.platform == 'win32':
         import msvcrt
         if msvcrt.kbhit():
             ch = msvcrt.getch()
-            if ch in [b'\r', b'\n', b' ']:
+            if ch in [b'\r', b'\n', b' ', b'q', b'Q']:
                 return True
+    else:
+        try:
+            import select
+            if select.select([sys.stdin], [], [], 0.0)[0]:
+                sys.stdin.readline()
+                return True
+        except Exception:
+            pass
     return False
 
 def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None, stt_engine=None):
@@ -473,9 +488,12 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     try:
         if not pygame.mixer.get_init():
             try:
-                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=4096)
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
             except Exception:
-                pygame.mixer.init()
+                try:
+                    pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=1024)
+                except Exception:
+                    pygame.mixer.init()
     except Exception:
         pass
 
@@ -554,13 +572,13 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 rms = float(np.sqrt(np.mean(audio_float**2)))
                 max_amp = float(np.max(np.abs(audio_float)))
 
-                # Detect human speech near mic (RMS > 350 or max amplitude peak > 6000)
-                if rms > 350 or max_amp > 6000:
+                # Require direct human voice near mic (RMS > 1000 or max_amp > 10000)
+                if rms > 1000 or max_amp > 10000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.5s speech chunk for rapid stop response
-                    if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
+                    # Accumulate ~0.8s speech chunk for reliable stop command verification
+                    if len(pcm_frames) >= 10 and (current_time - last_stt_check_time) > 0.8:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
@@ -569,7 +587,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         def async_stop_check(chunk_data, sr_used):
                             temp_path = f"temp_barge_{threading.get_ident()}_{int(time.time()*1000)}.wav"
                             try:
-                                # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz) with clipping fix
+                                # Resample audio chunk to 16000Hz if captured at hardware rate
                                 if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
                                     num_samples = int(round(len(chunk_data) * SAMPLE_RATE / float(sr_used)))
                                     if chunk_data.ndim > 1:
@@ -598,15 +616,17 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 with SuppressStdout():
                                     txt = stt_engine.transcribe(temp_path)
 
-                                if txt and is_stop_command(txt):
-                                    print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!", flush=True)
-                                    interrupted[0] = True
-                                    try:
-                                        pygame.mixer.music.stop()
-                                        pygame.mixer.music.unload()
-                                    except Exception:
-                                        pass
-                                    stop_event.set()
+                                if txt:
+                                    clean_txt = txt.strip().strip('.').strip('!').strip('?').lower()
+                                    if clean_txt and is_stop_command(clean_txt, strict=True):
+                                        print(f"\n🛑 [BREAK COMMAND] Playback stopped by user voice command (\"{txt}\")!", flush=True)
+                                        interrupted[0] = True
+                                        try:
+                                            pygame.mixer.music.stop()
+                                            pygame.mixer.music.unload()
+                                        except Exception:
+                                            pass
+                                        stop_event.set()
                             except Exception:
                                 pass
                             finally:
@@ -642,6 +662,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         ):
                             actual_sr = sr
                             opened_stream = True
+                            print("🎙️  [PLAYBACK MIC ACTIVE] Microphone listening for 'BREAK' command...", flush=True)
                             while not stop_event.is_set():
                                 sd.sleep(50)
                     return

@@ -49,12 +49,24 @@ class TextToSpeech:
             communicate = edge_tts.Communicate(text, v, volume="+50%")
             await communicate.save(output_filepath)
         
+        def _run_async(coro):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    return executor.submit(asyncio.run, coro).result()
+            else:
+                return asyncio.run(coro)
+
         try:
-            asyncio.run(_speak(self.voice))
+            _run_async(_speak(self.voice))
         except Exception:
             # Fallback to standard Indian voice if custom voice name is unsupported
             fallback_voice = "en-IN-NeerjaNeural"
-            asyncio.run(_speak(fallback_voice))
+            _run_async(_speak(fallback_voice))
 
     def synthesize(self, text, output_filepath="temp_response.mp3"):
         """

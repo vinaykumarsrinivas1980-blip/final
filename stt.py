@@ -32,7 +32,7 @@ class SpeechToText:
             self.openai_client = OpenAI(api_key=self.openai_api_key)
 
         if not self.groq_client and not self.openai_client:
-            raise ValueError("No API keys found! Set GROQ_API_KEY or OPENAI_API_KEY in .env.")
+            print("⚠️ No Groq/OpenAI API keys found. SpeechToText will rely on Google Free Web STT fallback.", file=sys.stderr)
 
     def transcribe(self, audio_filepath, prompt=None):
         """

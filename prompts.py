@@ -186,7 +186,7 @@ DEFAULT_QUESTIONS = [
             "who built u",
             "who designed u",
         ],
-        "answer": "I was created by captain nishchitha, Tharun, Vinay, Shravani, and KP.",
+        "answer": "I was created by Captain Nishchitha, Tharun, Vinay, Shravani, and KP.",
     },
     {
         "questions": ["who is shravani", "who shravani", "about shravani", "tell me about shravani"],
@@ -497,34 +497,45 @@ def get_canned_response(user_text: str) -> str | None:
 
 
 STOP_KEYWORDS = {
-    "stop", "stopp", "shut", "shut up", "be quiet", "quiet", "pause", "wait", "cancel",
-    "nevermind", "never mind", "halt", "exit", "quit", "abort", "end", "finish", "enough",
-    "roko", "rok", "ruko", "band", "bandh", "band karo", "shant", "shant ho jao", "bas", "chup", "chup ho jao",
-    "nillu", "nillisi", "saaku", "yenu beda"
+    "break", "brake", "take a break", "please break", "break now", "break talking", "break speaking",
+    "stop", "stopp", "please stop", "stop now", "stop talking", "stop speaking",
+    "shut up", "be quiet", "silence", "cancel", "abort", "halt",
+    "ruko", "roko", "band karo", "bandh karo", "chup", "chup karo", "chup ho jao",
+    "shant ho jao", "nillu", "nillisi", "saaku"
 }
 
 
-def is_stop_command(text: str) -> bool:
+def is_stop_command(text: str, strict: bool = False) -> bool:
     """
-    Returns True if user_text contains a voice interrupt / stop command in English, Hindi, or Kannada.
+    Returns True if text contains an explicit voice break/stop command in English, Hindi, or Kannada.
+    If strict=True (used during playback interruption checks), requires exact phrase or standalone word match
+    to prevent false-positives from general conversation words.
     """
     if not text or not text.strip():
         return False
 
     clean = normalize_text(text)
-    words = set(clean.split())
+    if not clean:
+        return False
 
-    # 1. Exact full text match
+    # 1. Exact full utterance match (e.g. user said "break", "stop", "ruko")
     if clean in STOP_KEYWORDS:
         return True
 
-    # 2. Word-by-word match
-    if any(w in STOP_KEYWORDS for w in words):
-        return True
-
-    # 3. Multi-word phrase match (e.g. "shut up", "be quiet", "band karo")
+    # 2. Check multi-word break/stop phrases (e.g. "take a break", "please stop", "band karo")
     for k in STOP_KEYWORDS:
         if " " in k and k in clean:
             return True
+
+    if not strict:
+        # Standalone word match for non-strict checks
+        words = set(clean.split())
+        return any(w in STOP_KEYWORDS for w in words)
+
+    # In strict mode (during audio playback), if utterance is longer than 3 words (e.g., assistant reading a sentence),
+    # do NOT trigger break/stop unless an explicit keyword is spoken standalone
+    words = clean.split()
+    if len(words) <= 3:
+        return any(w in {"break", "brake", "stop", "stopp", "ruko", "roko", "cancel", "halt", "chup", "saaku"} for w in words)
 
     return False
