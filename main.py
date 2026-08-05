@@ -39,6 +39,8 @@ except Exception:
 
 _orig_print = builtins.print
 def safe_print(*args, **kwargs):
+    if 'flush' not in kwargs:
+        kwargs['flush'] = True
     try:
         _orig_print(*args, **kwargs)
     except UnicodeEncodeError:

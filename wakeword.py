@@ -21,10 +21,16 @@ import sounddevice as sd
 from scipy import signal
 from audio_io import get_working_device_index, suppress_c_stderr
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+import io
+os.environ["PYTHONUTF8"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+if sys.platform == 'win32':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 # openWakeWord expects 16kHz mono audio, processed in frames of 1280 samples (80 ms)
 SAMPLE_RATE = 16000
@@ -56,8 +62,12 @@ class WakeWordDetector:
             import openwakeword
             from openwakeword.model import Model
             
-            # Download models if not already cached locally
-            openwakeword.utils.download_models()
+            # Download models if not already cached locally (with try/except to prevent startup hangs)
+            try:
+                with suppress_c_stderr():
+                    openwakeword.utils.download_models()
+            except Exception:
+                pass
 
             # Resolve actual pretrained model name if an alias is used (e.g. 'max' -> 'alexa')
             target_key = self.model_name.lower().strip()
