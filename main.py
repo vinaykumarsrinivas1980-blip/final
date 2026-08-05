@@ -24,10 +24,36 @@ from prompts import is_stop_command
 load_dotenv()
 
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+import builtins
+
+os.environ["PYTHONUTF8"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+_orig_print = builtins.print
+def safe_print(*args, **kwargs):
+    try:
+        _orig_print(*args, **kwargs)
+    except UnicodeEncodeError:
+        clean_args = []
+        for arg in args:
+            if isinstance(arg, str):
+                clean_args.append(arg.encode('ascii', 'ignore').decode('ascii'))
+            else:
+                clean_args.append(arg)
+        try:
+            _orig_print(*clean_args, **kwargs)
+        except Exception:
+            pass
+
+builtins.print = safe_print
 
 
 def print_banner(wake_word_enabled=False, wake_model="max", voice_name="en-IN-NeerjaNeural"):
