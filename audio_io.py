@@ -438,6 +438,16 @@ def normalize_and_boost_audio(data, gain_db=6.0):
         return data
 
 
+def flush_keypress_buffer():
+    """Flushes stale Windows console keypresses from msvcrt buffer."""
+    if sys.platform == 'win32':
+        import msvcrt
+        while msvcrt.kbhit():
+            try:
+                msvcrt.getch()
+            except Exception:
+                break
+
 def check_keypress_interrupt():
     """Returns True if user has pressed ENTER or key in Windows CLI."""
     if sys.platform == 'win32':
@@ -469,6 +479,9 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
     interrupted = [False]
     stop_event = threading.Event()
+
+    # Flush any stale keypresses left over in the Windows console input buffer
+    flush_keypress_buffer()
 
     def mic_interrupt_listener():
         """Background listener monitoring mic for openWakeWord ('Hey Jarvis') and voice stop commands ('stop', 'ruko', etc.) during playback."""
