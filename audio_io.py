@@ -491,9 +491,9 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
-            # 1. Check openWakeWord neural hits ("alexa", "hey_jarvis", "max") during playback
+            # 1. Check openWakeWord neural hits ("alexa", "hey_jarvis", "max") during playback (high threshold 0.65 to avoid speaker echo false positives)
             if wakeword_detector:
-                hit = wakeword_detector.predict_frame(indata, override_threshold=0.35)
+                hit = wakeword_detector.predict_frame(indata, override_threshold=0.65)
                 if hit:
                     print(f"\n⚡ [WAKE WORD INTERRUPT] Playback stopped by wake word '{hit}'!")
                     interrupted[0] = True
@@ -514,20 +514,27 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 rms = float(np.sqrt(np.mean(audio_float**2)))
                 max_amp = float(np.max(np.abs(audio_float)))
 
-                # Detect active human voice near mic (RMS > 250 or max amplitude peak > 5000)
-                if rms > 250 or max_amp > 5000:
+                # Detect active human voice near mic (RMS > 1200 or max amplitude peak > 12000)
+                if rms > 1200 or max_amp > 12000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.7s speech chunk for rapid response without overloading STT API
-                    if len(pcm_frames) >= 8 and (current_time - last_stt_check_time) > 0.7:
+                    # Process accumulated ~0.5s speech chunk for rapid response
+                    if len(pcm_frames) >= 6 and (current_time - last_stt_check_time) > 0.5:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
                         is_checking[0] = True
 
+                        # Instantly pause speaker playback so user feels 0-latency reaction
+                        try:
+                            pygame.mixer.music.pause()
+                        except Exception:
+                            pass
+
                         def async_stop_check(chunk_data, sr_used):
                             temp_path = f"temp_barge_{threading.get_ident()}_{int(time.time()*1000)}.wav"
+                            is_stop = False
                             try:
                                 # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz) with clipping fix
                                 if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
@@ -559,6 +566,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     txt = stt_engine.transcribe(temp_path)
 
                                 if txt and is_stop_command(txt):
+                                    is_stop = True
                                     print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!", flush=True)
                                     interrupted[0] = True
                                     try:
@@ -571,6 +579,11 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 pass
                             finally:
                                 is_checking[0] = False
+                                if not is_stop and not stop_event.is_set():
+                                    try:
+                                        pygame.mixer.music.unpause()
+                                    except Exception:
+                                        pass
                                 if os.path.exists(temp_path):
                                     try:
                                         os.remove(temp_path)

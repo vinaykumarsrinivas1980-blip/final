@@ -205,7 +205,10 @@ def main():
 
             if was_interrupted:
                 print("\n🛑 [INTERRUPTED] Playback stopped by user.")
+                time.sleep(0.3)
                 continue
+
+            time.sleep(0.3)
 
             total_latency = time.time() - pipeline_start
 

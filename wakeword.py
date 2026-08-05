@@ -125,6 +125,9 @@ class WakeWordDetector:
         if not self.oww_model:
             raise RuntimeError("WakeWordDetector model is not initialized.")
 
+        if self.oww_model:
+            self.oww_model.reset()
+
         display_phrase = self.model_name.replace("_", " ").title()
         print(f"\n👂 [WAKE WORD] Listening for '{display_phrase}'...")
         start_time = time.time()
