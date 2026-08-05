@@ -121,14 +121,18 @@ def main():
     print("------------------------------------------------------------\n")
 
     # Step 3: Main Conversation Loop
+    in_active_session = False
+
     while True:
         try:
             if wake_word_enabled:
-                triggered = wakeword_detector.listen_for_wakeword(device_index=mic_idx)
-                if not triggered:
-                    time.sleep(0.5)
-                    continue
-                print(f"✨ [WAKE WORD DETECTED] Speak your prompt now...")
+                if not in_active_session:
+                    triggered = wakeword_detector.listen_for_wakeword(device_index=mic_idx)
+                    if not triggered:
+                        time.sleep(0.5)
+                        continue
+                    print(f"✨ [WAKE WORD DETECTED] Speak your prompt now...")
+                    in_active_session = True
             else:
                 cmd = input("\n👉 Press [ENTER] to start recording (or type q to exit): ").strip()
                 if cmd.lower() in ['q', 'exit', 'quit']:
@@ -152,6 +156,7 @@ def main():
 
             if rec_dur < 0.5:
                 print("⚠️ Recording too short (< 0.5s). Skipping...")
+                in_active_session = False
                 continue
 
             # 2. SPEECH TO TEXT
@@ -161,7 +166,8 @@ def main():
             stt_latency = time.time() - stt_start
 
             if not user_text:
-                print("⚠️ No speech detected in recording.")
+                print("⚠️ No speech detected in recording. Resetting to wake-word mode...")
+                in_active_session = False
                 continue
 
             print(f"🗣️  User Said: \"{user_text}\"")
@@ -169,6 +175,7 @@ def main():
             # 2a. VOICE INTERRUPT / STOP COMMAND CHECK
             if is_stop_command(user_text):
                 clean_stop = user_text.lower().strip()
+                in_active_session = False
                 if any(kw in clean_stop for kw in ["exit", "quit", "goodbye", "bye", "shutdown"]):
                     print(f"\n🛑 [STOP COMMAND] Exiting voice assistant per user request (\"{user_text}\"). Goodbye!\n")
                     break
@@ -205,6 +212,7 @@ def main():
 
             if was_interrupted:
                 print("\n🛑 [INTERRUPTED] Playback stopped by user.")
+                in_active_session = False
                 time.sleep(0.3)
                 continue
 

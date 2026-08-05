@@ -329,8 +329,8 @@ def record_smart_audio(output_filepath="temp_input.wav", device_index=None, sile
     last_speech_time = time.time()
     speech_started = False
     
-    # RMS threshold for detecting active speech
-    SPEECH_RMS_THRESHOLD = 300
+    # RMS threshold for detecting active speech (sensitive threshold for all mics)
+    SPEECH_RMS_THRESHOLD = 120
     
     while True:
         elapsed = time.time() - start_time
