@@ -126,7 +126,8 @@ def main():
             if wake_word_enabled:
                 triggered = wakeword_detector.listen_for_wakeword(device_index=mic_idx)
                 if not triggered:
-                    break
+                    time.sleep(0.5)
+                    continue
                 print(f"✨ [WAKE WORD DETECTED] Speak your prompt now...")
             else:
                 cmd = input("\n👉 Press [ENTER] to start recording (or type q to exit): ").strip()
@@ -202,9 +203,8 @@ def main():
             )
             play_latency = time.time() - play_start
 
-
-
             if was_interrupted:
+                print("\n🛑 [INTERRUPTED] Playback stopped by user.")
                 continue
 
             total_latency = time.time() - pipeline_start

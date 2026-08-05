@@ -244,7 +244,7 @@ class WakeWordDetector:
 
         except KeyboardInterrupt:
             print("\n⏹️ [WAKE WORD] Stopped by user.")
-            return False
+            raise
         except Exception as err:
             print(f"❌ [WAKE WORD Error] Streaming error: {err}", file=sys.stderr)
             return False

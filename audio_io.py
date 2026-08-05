@@ -482,6 +482,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         pcm_frames = []
         last_stt_check_time = 0.0
         frame_counter = 0
+        is_checking = [False]
 
         actual_sr = 16000
 
@@ -508,23 +509,25 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                     return
 
             # 2. Check for spoken stop commands ("stop", "ruko", "be quiet", "cancel", "chup") during playback
-            if stt_engine and len(indata) > 0:
+            if stt_engine and len(indata) > 0 and not is_checking[0]:
                 audio_float = indata.astype(np.float32)
                 rms = float(np.sqrt(np.mean(audio_float**2)))
                 max_amp = float(np.max(np.abs(audio_float)))
 
-                # Detect active human voice near mic (RMS > 180 or max amplitude peak > 4000)
-                if rms > 180 or max_amp > 4000:
+                # Detect active human voice near mic (RMS > 250 or max amplitude peak > 5000)
+                if rms > 250 or max_amp > 5000:
                     pcm_frames.append(indata.copy())
                     current_time = time.time()
                     
-                    # Process accumulated ~0.35s speech chunk for rapid response
-                    if len(pcm_frames) >= 4 and (current_time - last_stt_check_time) > 0.35:
+                    # Process accumulated ~0.7s speech chunk for rapid response without overloading STT API
+                    if len(pcm_frames) >= 8 and (current_time - last_stt_check_time) > 0.7:
                         last_stt_check_time = current_time
                         audio_chunk = np.concatenate(pcm_frames, axis=0)
                         pcm_frames.clear()
+                        is_checking[0] = True
 
                         def async_stop_check(chunk_data, sr_used):
+                            temp_path = f"temp_barge_{threading.get_ident()}_{int(time.time()*1000)}.wav"
                             try:
                                 # Resample audio chunk to 16000Hz if captured at hardware rate (e.g. 44100Hz) with clipping fix
                                 if sr_used != SAMPLE_RATE and len(chunk_data) > 0:
@@ -535,7 +538,6 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                         resample_float = signal.resample(chunk_data.astype(np.float32), num_samples)
                                     chunk_data = np.clip(resample_float, -32768, 32767).astype(DTYPE)
 
-                                temp_path = "temp_barge.wav"
                                 with wave.open(temp_path, 'wb') as wf:
                                     wf.setnchannels(1 if chunk_data.ndim == 1 else chunk_data.shape[1])
                                     wf.setsampwidth(2)
@@ -556,12 +558,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                 with SuppressStdout():
                                     txt = stt_engine.transcribe(temp_path)
 
-                                import re
-                                clean_txt = txt.lower().strip() if txt else ""
-                                clean_words = set(re.sub(r'[^\w\s]', '', clean_txt).split())
-                                stop_keywords = {"stop", "stopp", "quiet", "cancel", "wait", "ruko", "band", "chup", "halt", "enough", "shut", "pause"}
-
-                                if clean_txt and (any(w in clean_words for w in stop_keywords) or any(w in clean_txt for w in ["stop", "ruko", "quiet", "cancel", "shut"])):
+                                if txt and is_stop_command(txt):
                                     print(f"\n🛑 [STOP COMMAND] Playback stopped by user voice command (\"{txt}\")!", flush=True)
                                     interrupted[0] = True
                                     try:
@@ -572,6 +569,13 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                                     stop_event.set()
                             except Exception:
                                 pass
+                            finally:
+                                is_checking[0] = False
+                                if os.path.exists(temp_path):
+                                    try:
+                                        os.remove(temp_path)
+                                    except Exception:
+                                        pass
 
                         t_barge = threading.Thread(target=async_stop_check, args=(audio_chunk, actual_sr), daemon=True)
                         t_barge.start()
@@ -631,6 +635,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             pygame.mixer.music.stop()
         except Exception:
             pass
+        raise
     except Exception as err:
         print(f"⚠️ Playback error: {err}", file=sys.stderr)
     finally:
@@ -641,7 +646,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         except Exception:
             pass
 
-    return interrupted[0] or stop_event.is_set()
+    return interrupted[0]
 
 
 
