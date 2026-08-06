@@ -165,6 +165,35 @@ SPEAKER_DEVICE_INDEX=
 
 ---
 
+### 🚀 One-Command Launch (Activate Environment & Run)
+
+You can activate the virtual environment and start the robot assistant in **a single command**:
+
+#### On Linux / Raspberry Pi:
+```bash
+# Hands-Free Wake-Word Mode ("Max" / "Hey Jarvis")
+source venv/bin/activate && python main.py --wake-word
+
+# Push-To-Talk Mode (Press ENTER to talk)
+source venv/bin/activate && python main.py
+```
+
+#### On Windows (PowerShell):
+```powershell
+# Hands-Free Wake-Word Mode
+.\venv\Scripts\Activate.ps1; python main.py --wake-word
+
+# Push-To-Talk Mode
+.\venv\Scripts\Activate.ps1; python main.py
+```
+
+#### On Windows (CMD):
+```cmd
+venv\Scripts\activate.bat && python main.py --wake-word
+```
+
+---
+
 ### Step 4: Install & Enable systemd Boot Service
 
 To make the assistant start automatically when the Raspberry Pi boots:
