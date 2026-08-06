@@ -73,6 +73,31 @@ SAMPLE_RATE = 16000  # 16kHz mono is standard for speech processing
 CHANNELS = 1
 DTYPE = 'int16'
 
+SHUTDOWN_EVENT = threading.Event()
+
+def set_shutdown_flag():
+    """Sets the global shutdown signal event for headless termination."""
+    SHUTDOWN_EVENT.set()
+
+def is_shutdown_requested():
+    """Returns True if a system shutdown or termination signal has been received."""
+    return SHUTDOWN_EVENT.is_set()
+
+def cleanup_audio_resources():
+    """Stops active sounddevice streams and unloads pygame mixer during shutdown."""
+    set_shutdown_flag()
+    try:
+        sd.stop()
+    except Exception:
+        pass
+    try:
+        import pygame
+        if pygame.mixer.get_init():
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+    except Exception:
+        pass
+
 class suppress_c_stderr:
     """Context manager to suppress low-level ALSA / PortAudio C-library stderr warnings on Linux."""
     def __enter__(self):
@@ -267,7 +292,7 @@ class AudioRecorder:
                         ):
                             self.actual_sample_rate = sr
                             opened = True
-                            while self.is_recording:
+                            while self.is_recording and not is_shutdown_requested():
                                 sd.sleep(50)
                     break
                 except Exception as err:
@@ -663,7 +688,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                             actual_sr = sr
                             opened_stream = True
                             print("🎙️  [PLAYBACK MIC ACTIVE] Microphone listening for 'BREAK' command...", flush=True)
-                            while not stop_event.is_set():
+                            while not stop_event.is_set() and not is_shutdown_requested():
                                 sd.sleep(50)
                     return
                 except Exception as err:
@@ -683,7 +708,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
         pygame.mixer.music.load(filepath)
         pygame.mixer.music.play()
 
-        while pygame.mixer.music.get_busy() and not stop_event.is_set():
+        while pygame.mixer.music.get_busy() and not stop_event.is_set() and not is_shutdown_requested():
             if check_keypress_interrupt():
                 interrupted[0] = True
                 pygame.mixer.music.stop()

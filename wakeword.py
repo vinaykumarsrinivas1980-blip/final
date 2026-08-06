@@ -19,7 +19,7 @@ except Exception:
 
 import sounddevice as sd
 from scipy import signal
-from audio_io import get_working_device_index, suppress_c_stderr
+from audio_io import get_working_device_index, suppress_c_stderr, is_shutdown_requested
 
 import io
 os.environ["PYTHONUTF8"] = "1"
@@ -210,11 +210,13 @@ class WakeWordDetector:
                                 callback=audio_callback
                             ):
                                 opened = True
-                                while not detected:
+                                while not detected and not is_shutdown_requested():
                                     if timeout and (time.time() - start_time) > timeout:
                                         print("⏳ [WAKE WORD] Listening timed out.")
                                         return False
                                     sd.sleep(50)
+                                if is_shutdown_requested():
+                                    return False
                         break
                     except Exception as err:
                         last_err = err

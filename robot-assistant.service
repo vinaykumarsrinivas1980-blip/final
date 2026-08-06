@@ -1,0 +1,31 @@
+[Unit]
+Description=Raspberry Pi Robot Assistant Headless Service
+Documentation=https://github.com/vinaykumarsrinivas1980-blip/up-robo
+Wants=network-online.target sound.target
+After=network-online.target sound.target multi-user.target
+
+[Service]
+Type=simple
+User=%u
+WorkingDirectory=/home/%u/robo-assisant
+ExecStart=/home/%u/robo-assisant/venv/bin/python main.py --wake-word
+
+# Environment variables setup
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/%u/robo-assisant/.env
+
+# Restart policies (restarts on crash after 10 seconds; avoids rapid infinite loops)
+Restart=on-failure
+RestartSec=10s
+
+# Logging configuration
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=robot-assistant
+
+# Signal & graceful stop configuration
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=multi-user.target
