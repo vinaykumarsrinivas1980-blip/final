@@ -483,19 +483,31 @@ def flush_keypress_buffer():
             pass
 
 def check_keypress_interrupt():
-    """Returns True if user has pressed ENTER or key in CLI (Windows & Linux/Raspberry Pi)."""
+    """Returns True if user has pressed 'm' / 'M' (or ENTER/space) on keyboard in CLI (Windows & Linux/Raspberry Pi)."""
     if sys.platform == 'win32':
         import msvcrt
         if msvcrt.kbhit():
             ch = msvcrt.getch()
-            if ch in [b'\r', b'\n', b' ', b'q', b'Q']:
+            if ch.lower() in [b'm', b'\r', b'\n', b' ', b'q']:
                 return True
     else:
         try:
             import select
             if select.select([sys.stdin], [], [], 0.0)[0]:
-                sys.stdin.readline()
-                return True
+                try:
+                    import termios, tty
+                    old_settings = termios.tcgetattr(sys.stdin)
+                    try:
+                        tty.setcbreak(sys.stdin.fileno())
+                        ch = sys.stdin.read(1)
+                        if ch.lower() in ['m', '\r', '\n', ' ', 'q']:
+                            return True
+                    finally:
+                        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    line = sys.stdin.readline()
+                    if 'm' in line.lower() or line:
+                        return True
         except Exception:
             pass
     return False
@@ -712,7 +724,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if check_keypress_interrupt():
                 interrupted[0] = True
                 pygame.mixer.music.stop()
-                print("\n🛑 [KEYPRESS INTERRUPT] Playback stopped by user keypress!")
+                print("\n🛑 [KEYBOARD INTERRUPT] Playback stopped by pressing 'm'!", flush=True)
                 break
             time.sleep(0.02)
     except KeyboardInterrupt:

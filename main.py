@@ -303,20 +303,21 @@ def main():
             if is_shutdown_requested():
                 break
 
-            # 5. AUDIO PLAYBACK
+            # 5. AUDIO PLAYBACK (KEYBOARD 'M' INTERRUPT ACTIVE)
+            print("🔊 [4/4 SPEAKING] Playing speech response... (Press 'm' on keyboard to stop TTS)", flush=True)
             play_start = time.time()
             was_interrupted = play_audio(
                 speech_file,
                 device_index=spk_idx,
-                enable_interrupt=True,
+                enable_interrupt=False,  # Voice interrupt disabled; press 'm' on keyboard to stop TTS
                 mic_device_index=mic_idx,
                 wakeword_detector=None,
-                stt_engine=stt_engine
+                stt_engine=None
             )
             play_latency = time.time() - play_start
 
             if was_interrupted:
-                print("\n🛑 [INTERRUPTED] Playback stopped by user.", flush=True)
+                print("\n🛑 [INTERRUPTED] TTS playback stopped by pressing 'm'.", flush=True)
                 in_active_session = False
                 time.sleep(0.3)
                 continue
