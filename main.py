@@ -228,11 +228,6 @@ def main():
                         time.sleep(0.5)
                         continue
                     print(f"✨ [WAKE WORD DETECTED] Speak your prompt now...", flush=True)
-                    try:
-                        from audio_io import play_beep_sound
-                        play_beep_sound()
-                    except Exception:
-                        pass
                     in_active_session = True
             else:
                 if not is_interactive:
