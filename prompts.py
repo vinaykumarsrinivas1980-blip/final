@@ -12,7 +12,7 @@ def robot_now():
 
 
 ROBOT_PERSONALITY = (
-    "You are a friendly Raspberry Pi robot speaking to a human nearby. "
+    "You are Spark, a friendly Raspberry Pi robot speaking to a human nearby. "
     "Keep answers warm, professional, natural, easy to say out loud, and suitable for a social robot."
 )
 
@@ -79,9 +79,13 @@ DEFAULT_QUESTIONS = [
             "your name",
             "tell me your name",
             "who are you",
+            "who are u",
+            "who are it",
+            "who are",
+            "who u are",
             "name please",
         ],
-        "answer": "I am your robot assistant.",
+        "answer": "I am Spark.",
     },
     {
         "questions": ["how are you", "how are you doing", "how do you do", "hows it going"],
@@ -186,7 +190,7 @@ DEFAULT_QUESTIONS = [
             "who built u",
             "who designed u",
         ],
-        "answer": "I was created by Captain Nishchitha, Tharun, Vinay, Shravani, and KP.",
+        "answer": "I was created by Captain Nishchitha, Tharun, Tarun KP, Vinay, and Shravani.",
     },
     {
         "questions": ["who is shravani", "who shravani", "about shravani", "tell me about shravani"],
@@ -210,12 +214,12 @@ DEFAULT_QUESTIONS = [
         "answer": "Tharun is one of the core creators and developers of this robot project.",
     },
     {
-        "questions": ["who is vinay", "who vinay", "about vinay"],
-        "answer": "Vinay is one of the core creators and developers of this robot project.",
+        "questions": ["who is tarun kp", "who tarun kp", "about tarun kp", "who is kp", "who kp", "about kp"],
+        "answer": "Tarun KP is one of the core creators and developers of this robot project.",
     },
     {
-        "questions": ["who is kp", "who kp", "about kp"],
-        "answer": "KP is one of the core creators and developers of this robot project.",
+        "questions": ["who is vinay", "who vinay", "about vinay"],
+        "answer": "Vinay is one of the core creators and developers of this robot project.",
     },
     {
         "questions": ["what is india", "tell me about india", "about india"],

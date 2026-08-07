@@ -750,32 +750,14 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
 
 
-def play_beep_sound(device_index=None, frequency=1200, duration_ms=180):
+def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0.6):
     """
-    Plays a natural 'Haa?' voice response (or fallback tone) when wake-word is activated.
+    Plays a clear beep sound notification at 60% volume when wake-word is activated.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    haa_path = os.path.join(base_dir, "haa.mp3")
-
-    if os.path.exists(haa_path):
-        try:
-            play_audio(haa_path, device_index=device_index, enable_interrupt=False)
-            return
-        except Exception:
-            pass
-
-    if sys.platform == 'win32':
-        try:
-            import winsound
-            winsound.Beep(frequency, duration_ms)
-            return
-        except Exception:
-            pass
-
     try:
         sr = 16000
-        t = np.linspace(0, duration_ms / 1000.0, int(sr * duration_ms / 1000.0))
-        audio = 0.5 * np.sin(2 * np.pi * frequency * t)
+        t = np.linspace(0, duration_ms / 1000.0, int(sr * duration_ms / 1000.0), endpoint=False)
+        audio = volume * np.sin(2 * np.pi * frequency * t)
         fade_len = int(sr * 0.01)
         if len(audio) > 2 * fade_len:
             audio[:fade_len] *= np.linspace(0, 1, fade_len)
@@ -785,8 +767,17 @@ def play_beep_sound(device_index=None, frequency=1200, duration_ms=180):
         with suppress_c_stderr():
             sd.play(audio_pcm, samplerate=sr, device=target_spk)
             sd.wait()
+        return
     except Exception:
         pass
+
+    if sys.platform == 'win32':
+        try:
+            import winsound
+            winsound.Beep(frequency, duration_ms)
+            return
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
