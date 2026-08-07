@@ -151,7 +151,7 @@ def main():
     parser = argparse.ArgumentParser(description="Raspberry Pi Cloud Voice Assistant")
     parser.add_argument("--wake-word", "-w", action="store_true", help="Enable hands-free wake word detection ('Max')")
     parser.add_argument("--push-to-talk", "-p", action="store_true", help="Use manual ENTER key push-to-talk mode")
-    default_model = os.getenv("WAKE_MODEL", "max")
+    default_model = os.getenv("WAKE_MODEL", "spark")
     parser.add_argument("--wake-model", type=str, default=default_model, help=f"openWakeWord model name (default: {default_model})")
     default_threshold = float(os.getenv("WAKE_THRESHOLD", "0.40"))
     parser.add_argument("--wake-threshold", type=float, default=default_threshold, help=f"Wake word confidence threshold (default: {default_threshold})")

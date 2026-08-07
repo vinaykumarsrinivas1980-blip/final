@@ -39,6 +39,7 @@ CHUNK_SIZE = 1280
 # Map custom/short wake word names to openWakeWord pretrained models
 WAKE_WORD_ALIASES = {
     "max": "alexa",
+    "spark": "alexa",
     "jarvis": "hey_jarvis",
     "mycroft": "hey_mycroft",
     "rhasspy": "hey_rhasspy",
@@ -74,20 +75,26 @@ class WakeWordDetector:
             except Exception:
                 pass
 
-            # Resolve actual pretrained model name if an alias is used (e.g. 'max' -> 'alexa')
+            # Resolve model path / alias (e.g., check for local custom spark.onnx model first)
             target_key = self.model_name.lower().strip()
-            actual_model = WAKE_WORD_ALIASES.get(target_key, target_key)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            custom_model_path = os.path.join(base_dir, f"{target_key}.onnx")
 
-            models_to_try = [actual_model, "alexa", "hey_jarvis", "hey_mycroft"]
-            # Deduplicate while maintaining order
-            unique_models = []
-            for m in models_to_try:
-                if m not in unique_models:
-                    unique_models.append(m)
+            models_to_try = []
+            if os.path.exists(custom_model_path):
+                models_to_try.append(custom_model_path)
+            
+            actual_model = WAKE_WORD_ALIASES.get(target_key, target_key)
+            if actual_model not in models_to_try:
+                models_to_try.append(actual_model)
+            
+            for fallback in ["alexa", "hey_jarvis"]:
+                if fallback not in models_to_try:
+                    models_to_try.append(fallback)
 
             with suppress_c_stderr():
                 try:
-                    self.oww_model = Model(wakeword_models=unique_models, inference_framework="onnx")
+                    self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
                 except Exception:
                     self.oww_model = Model(wakeword_models=["alexa", "hey_jarvis"], inference_framework="onnx")
 

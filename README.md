@@ -1,13 +1,13 @@
 # Raspberry Pi Cloud Voice Assistant 🤖🎙️
 
-A modular, ultra-low-latency, zero-cost voice assistant built in Python for Raspberry Pi OS (64-bit) and Windows. Configured for **100% Headless Operation** without requiring an HDMI monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Hey Jarvis" / "Max")** modes.
+A modular, ultra-low-latency, zero-cost voice assistant built in Python for Raspberry Pi OS (64-bit) and Windows. Configured for **100% Headless Operation** without requiring an HDMI monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Spark" / "Hey Jarvis" / "Max")** modes.
 
 ---
 
 ## 1. Tech Architecture & Zero-Cost Pipeline
 
 - **Audio I/O**: `sounddevice` + `scipy` (Auto-detects USB mic/speakers, handles ALSA 1/2 channel stereo-to-mono downmixing, sample rate fallback).
-- **Wake Word Detection**: `openWakeWord` (100% Offline local "Hey Jarvis" / "Max" ONNX wake word detection).
+- **Wake Word Detection**: `openWakeWord` (100% Offline local "Spark" [`spark.onnx`], "Hey Jarvis", "Max" ONNX wake word detection).
 - **Speech-to-Text (STT)**: 
   1. Groq Whisper (`whisper-large-v3-turbo` — 100% Free & ultra-fast)
   2. Google Free Web STT (`speech_recognition` — 100% Free, no API keys required)
