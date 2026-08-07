@@ -750,6 +750,32 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
 
 
+def play_beep_sound(device_index=None, frequency=1000, duration_ms=150):
+    """
+    Plays a short, pleasant notification beep tone to indicate wake-word activation.
+    """
+    try:
+        sr = 16000
+        t = np.linspace(0, duration_ms / 1000.0, int(sr * duration_ms / 1000.0))
+        audio = 0.3 * np.sin(2 * np.pi * frequency * t)
+        fade_len = int(sr * 0.01)
+        if len(audio) > 2 * fade_len:
+            audio[:fade_len] *= np.linspace(0, 1, fade_len)
+            audio[-fade_len:] *= np.linspace(1, 0, fade_len)
+        audio_pcm = (audio * 32767).astype(np.int16)
+        target_spk = get_working_device_index('output', device_index)
+        with suppress_c_stderr():
+            sd.play(audio_pcm, samplerate=sr, device=target_spk)
+            sd.wait()
+    except Exception:
+        if sys.platform == 'win32':
+            try:
+                import winsound
+                winsound.Beep(frequency, duration_ms)
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Audio IO Diagnostic Utility")

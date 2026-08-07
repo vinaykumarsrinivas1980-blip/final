@@ -265,6 +265,11 @@ class WakeWordDetector:
                 return False
 
             print(f"⚡ [WAKE WORD DETECTED] Triggered phrase: '{detected_name or self.model_name}'!")
+            try:
+                from audio_io import play_beep_sound
+                play_beep_sound()
+            except Exception:
+                pass
 
             self.oww_model.reset()  # Reset internal prediction buffers
             return True
