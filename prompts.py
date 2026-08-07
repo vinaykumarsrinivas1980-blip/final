@@ -190,7 +190,7 @@ DEFAULT_QUESTIONS = [
             "who built u",
             "who designed u",
         ],
-        "answer": "I was created by Captain Nishchitha, Tharun, Tarun KP, Vinay, and Shravani.",
+        "answer": "I was created by Captain Nishchitha, Tarun KP, Tharun, Vinay, and Shravani.",
     },
     {
         "questions": ["who is shravani", "who shravani", "about shravani", "tell me about shravani"],
