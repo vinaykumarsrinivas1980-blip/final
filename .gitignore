@@ -15,6 +15,7 @@ __pycache__/
 # Temporary audio test files & recordings
 *.wav
 *.mp3
+!haa.mp3
 conversation_history.json
 
 # IDE & OS files

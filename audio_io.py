@@ -752,8 +752,18 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
 def play_beep_sound(device_index=None, frequency=1200, duration_ms=180):
     """
-    Plays a loud, crisp notification beep tone when wake-word is activated.
+    Plays a natural 'Haa?' voice response (or fallback tone) when wake-word is activated.
     """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    haa_path = os.path.join(base_dir, "haa.mp3")
+
+    if os.path.exists(haa_path):
+        try:
+            play_audio(haa_path, device_index=device_index, enable_interrupt=False)
+            return
+        except Exception:
+            pass
+
     if sys.platform == 'win32':
         try:
             import winsound
