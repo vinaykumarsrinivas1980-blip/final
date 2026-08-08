@@ -40,29 +40,27 @@ robo-assisant/
 ├── tts.py                  # 5-Tier TTS fallback (Edge-TTS, gTTS, pyttsx3, espeak)
 ├── test_suite.py           # Comprehensive integration & unit test suite
 ├── main.py                 # Main orchestrator CLI & systemd daemon loop
-└── README.md               # Setup & SSH remote management documentation
+└── README.md               # Setup & VNC remote management documentation
 ```
 
 ---
 
-## 3. How to Connect Laptop to Raspberry Pi (Remote SSH)
+## 3. How to Connect Laptop to Raspberry Pi (Remote VNC)
 
 ### Hardware Requirements
 - **Raspberry Pi** (3B+/4B/5 with Raspberry Pi OS 64-bit)
 - **Power Supply** (Official USB-C/Micro-USB)
 - **USB Microphone** (Plugged into Pi USB port)
 - **USB Speaker** (Plugged into Pi USB port)
-- **Wi-Fi / Ethernet Network**
-- **Laptop** (Windows, Mac, or Linux)
-- *(No HDMI monitor, keyboard, or mouse required after initial Wi-Fi setup)*
+- **Wi-Fi / Ethernet Network** (Raspberry Pi & Laptop connected to the same network)
+- **Laptop / PC** (Windows, Mac, or Linux with a VNC Viewer client installed)
 
 ---
 
-### Step 1: Enable SSH on Raspberry Pi
-If you haven't enabled SSH when writing the OS image using **Raspberry Pi Imager**:
-1. Insert the microSD card into your laptop.
-2. In the `boot` partition of the microSD card, create a blank file named `ssh` (no extension).
-3. Insert the card into your Raspberry Pi and power it ON.
+### Step 1: Enable VNC on Raspberry Pi
+Enable the VNC server on your Raspberry Pi:
+- **Via Raspberry Pi Desktop**: Go to **Menu ➔ Preferences ➔ Raspberry Pi Configuration ➔ Interfaces** tab and set **VNC** to **Enabled**.
+- **Via Raspberry Pi Terminal**: Run `sudo raspi-config`, navigate to **Interface Options ➔ VNC**, select **Yes** to enable, and exit.
 
 ---
 
@@ -79,42 +77,40 @@ If `raspberrypi.local` resolves, note the IP address (e.g. `192.168.1.50`).
 
 *Alternative IP discovery method:*
 - Check your home Wi-Fi router's connected devices page.
-- Or use `nmap` / `arp -a` from your laptop:
+- Or use `arp -a` from your laptop:
   ```bash
   arp -a | findstr -i "dc-a6-32 b8-27-eb"
   ```
 
 ---
 
-### Step 3: Connect via SSH Terminal
+### Step 3: Install VNC Viewer & Connect
 
-From your laptop terminal, run:
-
-```bash
-ssh pi@raspberrypi.local
-# Or using the specific IP address:
-ssh pi@192.168.1.50
-```
-
-- **Default Username**: `pi` (or the username created during Pi Imager setup)
-- **Password**: Type your Pi account password when prompted.
+1. Download and install **RealVNC Viewer** (or TigerVNC / TightVNC) on your laptop.
+2. Open VNC Viewer.
+3. In the top connection/address bar, type `raspberrypi.local` or the Pi's IP address (e.g., `192.168.1.50`).
+4. Press **Enter** to initiate the connection.
+5. When prompted, enter your Raspberry Pi **Username** (default `pi`) and **Password**.
+6. The full Raspberry Pi desktop interface will open on your laptop screen.
 
 ---
 
-### Step 4: (Optional) Connect via VS Code Remote SSH
+### Step 4: Access Terminal & Manage Project
 
-1. Open **VS Code** on your laptop.
-2. Install the **Remote - SSH** extension by Microsoft.
-3. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac) and select **Remote-SSH: Connect to Host...**.
-4. Type `pi@raspberrypi.local` or `pi@<IP_ADDRESS>`.
-5. Open the folder `/home/pi/robo-assisant` to edit code live from your laptop.
+Once connected via VNC desktop:
+1. Click the **Terminal icon** on the Raspberry Pi taskbar (or press `Ctrl+Alt+T`).
+2. Navigate to the project directory:
+   ```bash
+   cd ~/robo-assisant
+   ```
+3. Run and manage the robot assistant directly from the graphical terminal window.
 
 ---
 
 ## 4. Headless Setup & Auto-Start Configuration
 
 ### Step 1: Install System Audio Packages (Raspberry Pi OS)
-After connecting via SSH, install PortAudio and ALSA utilities:
+In the Raspberry Pi Terminal (via VNC or local terminal), install PortAudio and ALSA utilities:
 
 ```bash
 sudo apt update
@@ -217,9 +213,9 @@ sudo systemctl start robot-assistant.service
 
 ---
 
-## 5. Remote SSH Service Control Commands
+## 5. Service Control Commands
 
-Manage the background assistant service from your laptop via SSH:
+Manage the background assistant service from the Raspberry Pi terminal:
 
 ```bash
 # Check service status and health
@@ -239,7 +235,7 @@ sudo systemctl restart robot-assistant
 
 ## 6. Live Logging & Monitoring
 
-View real-time application logs over SSH:
+View real-time application logs in the terminal:
 
 ```bash
 # Stream live logs in real-time (tail output)
