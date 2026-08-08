@@ -1,13 +1,13 @@
 # Raspberry Pi Cloud Voice Assistant 🤖🎙️
 
-A modular, ultra-low-latency, zero-cost voice assistant built in Python for Raspberry Pi OS (64-bit) and Windows. Configured for **100% Headless Operation** without requiring an HDMI monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Spark" / "Hey Jarvis" / "Max")** modes.
+A modular, ultra-low-latency, zero-cost voice assistant built in Python for Raspberry Pi OS (64-bit) and Windows. Configured for **Remote Desktop (VNC) Operation** without requiring a physical monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Spark" / "Hey Jarvis" / "Max")** modes.
 
 ---
 
 ## 1. Tech Architecture & Zero-Cost Pipeline
 
 - **Audio I/O**: `sounddevice` + `scipy` (Auto-detects USB mic/speakers, handles ALSA 1/2 channel stereo-to-mono downmixing, sample rate fallback).
-- **Wake Word Detection**: `openWakeWord` (100% Offline local "Spark" [`spark.onnx`], "Hey Jarvis", "Max" ONNX wake word detection).
+- **Wake Word Detection**: `openWakeWord` (100% Offline local "Spark" (`spark.onnx`), "Hey Jarvis", "Max" ONNX wake word detection).
 - **Speech-to-Text (STT)**: 
   1. Groq Whisper (`whisper-large-v3-turbo` — 100% Free & ultra-fast)
   2. Google Free Web STT (`speech_recognition` — 100% Free, no API keys required)
@@ -21,7 +21,7 @@ A modular, ultra-low-latency, zero-cost voice assistant built in Python for Rasp
   3. **pyttsx3**: 100% Offline local TTS engine (SAPI5 / eSpeak)
   4. **espeak CLI**: System-level offline fallback for Raspberry Pi/Linux
   5. **OpenAI TTS**: Optional cloud fallback
-- **Headless Orchestrator**: `systemd` background service with network & USB hardware boot retries and graceful signal handling (`SIGTERM`/`SIGINT`).
+- **Background Service Orchestrator**: `systemd` background service with network & USB hardware boot retries and graceful signal handling (`SIGTERM`/`SIGINT`).
 
 ---
 
@@ -107,7 +107,7 @@ Once connected via VNC desktop:
 
 ---
 
-## 4. Headless Setup & Auto-Start Configuration
+## 4. Environment Setup & Auto-Start Configuration
 
 ### Step 1: Install System Audio Packages (Raspberry Pi OS)
 In the Raspberry Pi Terminal (via VNC or local terminal), install PortAudio and ALSA utilities:
@@ -274,7 +274,7 @@ python stt.py test_recording.wav
 python llm.py "What is the capital of Japan?"
 
 # 6. Test Text-to-Speech (TTS)
-python tts.py "Hello! Headless voice assistant test successful."
+python tts.py "Hello! Voice assistant test successful."
 ```
 
 ---
