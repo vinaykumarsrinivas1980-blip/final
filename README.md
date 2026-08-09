@@ -347,3 +347,6 @@ python main.py
 | **4. LLM** | Groq API (`llama-3.3-70b-versatile`) | **0.2s - 0.5s** | Free (14,400 RPD) |
 | **5. TTS** | Edge-TTS (Neural) / pyttsx3 | **0.4s - 0.9s** | Free / Local |
 | **TOTAL TURN** | **Complete Voice Cycle** | **~1.2s - 2.1s** | **100% Free** |
+
+  
+ 
