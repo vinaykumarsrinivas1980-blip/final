@@ -1,17 +1,24 @@
 # Raspberry Pi Cloud Voice Assistant 🤖🎙️
 
-A modular, ultra-low-latency, zero-cost voice assistant built in Python for Raspberry Pi OS (64-bit) and Windows. Configured for **Remote Desktop (VNC) Operation** without requiring a physical monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Spark" / "Hey Jarvis" / "Max")** modes.
+![Python Version](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Raspberry_Pi_OS_%7C_Windows-red?style=for-the-badge&logo=raspberrypi&logoColor=white)
+![LLM Engine](https://img.shields.io/badge/LLM-Groq_API_(Llama_3.3_70B)-f34f29?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+
+A modular, ultra-low-latency, zero-cost voice assistant built in Python for **Raspberry Pi OS (64-bit)** and **Windows**. Configured for **Remote Desktop (VNC) Operation** without requiring a physical monitor, keyboard, or mouse. Operates in both **Push-To-Talk** and **Hands-Free Wake-Word ("Spark" / "Hey Jarvis" / "Max")** modes.
+
+Developed by the student team at **S J C Institute of Technology (SJCIT)**, Department of Artificial Intelligence & Machine Learning.
 
 ---
 
-## 1. Tech Architecture & Zero-Cost Pipeline
+## 1. Tech Architecture & Zero-Cost Pipeline ⚡
 
 - **Audio I/O**: `sounddevice` + `scipy` (Auto-detects USB mic/speakers, handles ALSA 1/2 channel stereo-to-mono downmixing, sample rate fallback).
 - **Wake Word Detection**: `openWakeWord` (100% Offline local "Spark" (`spark.onnx`), "Hey Jarvis", "Max" ONNX wake word detection).
 - **Speech-to-Text (STT)**: 
-  1. Groq Whisper (`whisper-large-v3-turbo` — 100% Free & ultra-fast)
-  2. Google Free Web STT (`speech_recognition` — 100% Free, no API keys required)
-  3. OpenAI Whisper API (Optional fallback)
+  1. **Groq Whisper** (`whisper-large-v3-turbo` — 100% Free & ultra-fast)
+  2. **Google Free Web STT** (`speech_recognition` — 100% Free, no API keys required)
+  3. **OpenAI Whisper API** (Optional fallback)
 - **Large Language Model (LLM)**:
   - Groq API with 5-exchange short-term memory buffer and automatic multi-model fallback:
     `llama-3.3-70b-versatile` ➔ `llama-3.1-8b-instant` ➔ `gemma2-9b-it` ➔ `mixtral-8x7b-32768` (100% Free tier up to 14,400 requests/day).
@@ -25,15 +32,16 @@ A modular, ultra-low-latency, zero-cost voice assistant built in Python for Rasp
 
 ---
 
-## 2. Project Folder Structure
+## 2. Project Folder Structure 📁
 
 ```
-robo-assisant/
+up-robo/
 ├── .env.example            # Template for API keys & device overrides
 ├── requirements.txt        # Python package dependencies
 ├── robot-assistant.service # Systemd background service unit file
+├── spark.onnx              # Custom trained local openWakeWord neural model file
 ├── audio_io.py             # Audio hardware discovery, VAD recording, ALSA playback & signal cleanup
-├── wakeword.py             # openWakeWord offline local wake-word detector ("Hey Jarvis" / "Max")
+├── wakeword.py             # openWakeWord offline local wake-word detector ("Spark" / "Hey Jarvis" / "Max")
 ├── prompts.py              # Robot personality, multi-lingual rules, and 0ms local canned replies
 ├── stt.py                  # Groq Whisper & Google Free Web STT handler
 ├── llm.py                  # Groq LLM engine with memory buffer, canned responses & model fallbacks
@@ -43,9 +51,19 @@ robo-assisant/
 └── README.md               # Setup & VNC remote management documentation
 ```
 
+### 📄 Source Code Modules:
+- [main.py](file:///C:/Users/lrtha/up-robo/main.py) — System Orchestrator CLI & background daemon
+- [audio_io.py](file:///C:/Users/lrtha/up-robo/audio_io.py) — Audio device enumeration, dynamic VAD recording & playback
+- [wakeword.py](file:///C:/Users/lrtha/up-robo/wakeword.py) — Local openWakeWord ONNX detector (`spark.onnx`)
+- [llm.py](file:///C:/Users/lrtha/up-robo/llm.py) — Groq LLM engine & conversation memory history
+- [stt.py](file:///C:/Users/lrtha/up-robo/stt.py) — 3-Tier Speech-to-Text engine (Groq Whisper ➔ Google ➔ OpenAI)
+- [tts.py](file:///C:/Users/lrtha/up-robo/tts.py) — 5-Tier Text-to-Speech cascade (Edge-TTS ➔ gTTS ➔ pyttsx3 ➔ espeak ➔ OpenAI)
+- [prompts.py](file:///C:/Users/lrtha/up-robo/prompts.py) — Personality, instant 0ms canned replies & stop commands
+- [test_suite.py](file:///C:/Users/lrtha/up-robo/test_suite.py) — Integration test suite runner
+
 ---
 
-## 3. How to Connect Laptop to Raspberry Pi (Remote VNC)
+## 3. How to Connect Laptop to Raspberry Pi (Remote VNC) 💻📱
 
 ### Hardware Requirements
 - **Raspberry Pi** (3B+/4B/5 with Raspberry Pi OS 64-bit)
@@ -73,14 +91,15 @@ Open Command Prompt / PowerShell (Windows) or Terminal (Mac/Linux) on your lapto
 ping raspberrypi.local
 ```
 
-If `raspberrypi.local` resolves, note the IP address (e.g. `192.168.1.50`).
+If `raspberrypi.local` resolves, note the IP address (e.g., `192.168.1.50`).
 
-*Alternative IP discovery method:*
-- Check your home Wi-Fi router's connected devices page.
-- Or use `arp -a` from your laptop:
-  ```bash
-  arp -a | findstr -i "dc-a6-32 b8-27-eb"
-  ```
+> [!TIP]
+> *Alternative IP discovery method:*
+> - Check your home Wi-Fi router's connected devices page.
+> - Or run from your laptop:
+>   ```bash
+>   arp -a | findstr -i "dc-a6-32 b8-27-eb"
+>   ```
 
 ---
 
@@ -107,7 +126,7 @@ Once connected via VNC desktop:
 
 ---
 
-## 4. Environment Setup & Auto-Start Configuration
+## 4. Environment Setup & Auto-Start Configuration ⚙️
 
 ### Step 1: Install System Audio Packages (Raspberry Pi OS)
 In the Raspberry Pi Terminal (via VNC or local terminal), install PortAudio and ALSA utilities:
@@ -148,10 +167,10 @@ nano .env
 Set your free Groq API key (get a free key at [console.groq.com](https://console.groq.com)):
 
 ```ini
-GROQ_API_KEY=gsk_...
+GROQ_API_KEY=gsk_your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 TTS_VOICE=en-IN-NeerjaNeural
-WAKE_MODEL=max
+WAKE_MODEL=spark
 WAKE_THRESHOLD=0.40
 
 # Audio Device Overrides (Optional - leave empty for auto-detecting USB mic/speaker)
@@ -167,7 +186,7 @@ You can activate the virtual environment and start the robot assistant in **a si
 
 #### On Linux / Raspberry Pi:
 ```bash
-# Hands-Free Wake-Word Mode ("Max" / "Hey Jarvis")
+# Hands-Free Wake-Word Mode ("Spark" / "Max" / "Hey Jarvis")
 source venv/bin/activate && python main.py --wake-word
 
 # Push-To-Talk Mode (Press ENTER to talk)
@@ -213,7 +232,7 @@ sudo systemctl start robot-assistant.service
 
 ---
 
-## 5. Service Control Commands
+## 5. Service Control Commands 🛠️
 
 Manage the background assistant service from the Raspberry Pi terminal:
 
@@ -233,7 +252,7 @@ sudo systemctl restart robot-assistant
 
 ---
 
-## 6. Live Logging & Monitoring
+## 6. Live Logging & Monitoring 📊
 
 View real-time application logs in the terminal:
 
@@ -253,7 +272,7 @@ sudo journalctl -u robot-assistant -p err
 
 ---
 
-## 7. Independent Stage Diagnostics
+## 7. Independent Stage Diagnostics 🧪
 
 Test each component individually to verify hardware and API setup:
 
@@ -275,11 +294,14 @@ python llm.py "What is the capital of Japan?"
 
 # 6. Test Text-to-Speech (TTS)
 python tts.py "Hello! Voice assistant test successful."
+
+# 7. Test openWakeWord wake word detector
+python wakeword.py
 ```
 
 ---
 
-## 8. Hardware & Network Troubleshooting Guide
+## 8. Hardware & Network Troubleshooting Guide 🛠️
 
 ### A. Microphone Troubleshooting
 ```bash
@@ -318,7 +340,7 @@ ping -c 4 console.groq.com
 
 ---
 
-## 9. Disabling Auto-Boot & Reverting Changes
+## 9. Disabling Auto-Boot & Reverting Changes 🔄
 
 To stop auto-start on boot and revert to manual CLI execution:
 
@@ -337,16 +359,28 @@ python main.py
 
 ---
 
-## 10. Latency & Performance Breakdown
+## 10. Latency & Performance Breakdown ⏱️
 
 | Stage | Technology / Provider | Latency | Cost / Quota |
 | :--- | :--- | :--- | :--- |
 | **1. Mic Capture** | `sounddevice` (ALSA/WASAPI) | ~0.05s | Free / Local |
-| **2. Wake-Word** | `openWakeWord` (ONNX) | ~0.08s | Free / Local |
+| **2. Wake-Word** | `openWakeWord` (ONNX Neural) | ~0.08s | Free / Local |
 | **3. STT** | Groq Whisper / Google Free STT | **0.3s - 0.7s** | Free (14,400 RPD) |
 | **4. LLM** | Groq API (`llama-3.3-70b-versatile`) | **0.2s - 0.5s** | Free (14,400 RPD) |
 | **5. TTS** | Edge-TTS (Neural) / pyttsx3 | **0.4s - 0.9s** | Free / Local |
 | **TOTAL TURN** | **Complete Voice Cycle** | **~1.2s - 2.1s** | **100% Free** |
 
-  
- 
+---
+
+## 🎓 Team & Credits
+
+Developed at **S J C Institute of Technology (SJCIT)**, Chikkaballapur, Karnataka.
+- **Department**: Computer Science & Engineering — Artificial Intelligence & Machine Learning
+- **Principal**: Dr. G T Raju
+- **Head of Department**: Dr. Vikas Reddy S
+- **Developer Team**:
+  - 👑 **Captain Nishchitha** (Lead Creator & Project Captain)
+  - 🛠️ **Tarun KP** (Core Developer)
+  - 🛠️ **Tharun** (Core Developer)
+  - 🛠️ **Vinay** (Core Developer)
+  - 🛠️ **Shravani** (Core Developer)
