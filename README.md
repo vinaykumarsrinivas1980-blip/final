@@ -379,6 +379,6 @@ Developed at **S J C Institute of Technology (SJCIT)**, Chikkaballapur, Karnatak
 - **Principal**: Dr. G T Raju
 - **Head of Department**: Dr. Vikas Reddy S
 - **Developer Team**:
-  - 👑 **Vinay Kumar** (Lead Creator)
-  - 👑 **Tharun L R** (Project Captain)
-  - 🛠️ **Shravani** (Core Developer)
+  - **Vinay Kumar**
+  - **Tharun L R**
+  - **Shravani**
