@@ -12,7 +12,7 @@ echo "---------------------------------------------------------------------"
 # 1. Update APT and install essential system libraries
 echo "📦 [1/5] Installing system audio, ALSA, and build libraries..."
 sudo apt update
-sudo apt install -y python3-pip python3-dev python3-venv portaudio19-dev libasound2-dev libffi-dev libssl-dev ffmpeg mpg123 espeak aplay alsa-utils
+sudo apt install -y python3-pip python3-dev python3-venv portaudio19-dev libasound2-dev libffi-dev libssl-dev ffmpeg mpg123 espeak alsa-utils
 
 # 2. Add user to audio group for hardware permission
 echo "🎙️ [2/5] Setting up audio permissions..."
