@@ -753,24 +753,67 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0.6):
     """
     Plays a clear beep sound notification at 60% volume when wake-word is activated.
+    Uses multi-tiered sample rate & engine fallbacks for Raspberry Pi / Linux hardware.
     """
+    target_spk = get_working_device_index('output', device_index)
+
+    # 1. Try sounddevice with hardware standard sample rates (44100 Hz, 48000 Hz, 16000 Hz)
+    for sr in [44100, 48000, 16000]:
+        try:
+            num_samples = int(sr * (duration_ms / 1000.0))
+            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
+            audio = volume * np.sin(2 * np.pi * frequency * t)
+            fade_len = int(sr * 0.01)
+            if len(audio) > 2 * fade_len:
+                audio[:fade_len] *= np.linspace(0, 1, fade_len)
+                audio[-fade_len:] *= np.linspace(1, 0, fade_len)
+            audio_pcm = (audio * 32767).astype(np.int16)
+
+            with suppress_c_stderr():
+                sd.play(audio_pcm, samplerate=sr, device=target_spk)
+                sd.wait()
+            return
+        except Exception:
+            continue
+
+    # 2. Pygame mixer sound generator fallback
     try:
-        sr = 16000
-        t = np.linspace(0, duration_ms / 1000.0, int(sr * duration_ms / 1000.0), endpoint=False)
-        audio = volume * np.sin(2 * np.pi * frequency * t)
-        fade_len = int(sr * 0.01)
-        if len(audio) > 2 * fade_len:
-            audio[:fade_len] *= np.linspace(0, 1, fade_len)
-            audio[-fade_len:] *= np.linspace(1, 0, fade_len)
-        audio_pcm = (audio * 32767).astype(np.int16)
-        target_spk = get_working_device_index('output', device_index)
-        with suppress_c_stderr():
-            sd.play(audio_pcm, samplerate=sr, device=target_spk)
-            sd.wait()
+        import pygame
+        if not pygame.mixer.get_init():
+            try:
+                pygame.mixer.init(frequency=44100, size=-16, channels=1)
+            except Exception:
+                pygame.mixer.init()
+        sr = 44100
+        num_samples = int(sr * (duration_ms / 1000.0))
+        t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
+        audio_pcm = (volume * np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
+        sound = pygame.sndarray.make_sound(audio_pcm)
+        sound.play()
+        time.sleep(duration_ms / 1000.0 + 0.05)
         return
     except Exception:
         pass
 
+    # 3. Linux ALSA direct aplay CLI fallback (Raspberry Pi OS)
+    if sys.platform != 'win32':
+        try:
+            temp_beep = "/tmp/temp_beep.wav"
+            sr = 44100
+            num_samples = int(sr * (duration_ms / 1000.0))
+            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
+            audio_pcm = (volume * np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
+            with wave.open(temp_beep, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                wf.writeframes(audio_pcm.tobytes())
+            os.system(f"aplay -q {temp_beep} >/dev/null 2>&1")
+            return
+        except Exception:
+            pass
+
+    # 4. Windows winsound fallback
     if sys.platform == 'win32':
         try:
             import winsound
@@ -778,6 +821,7 @@ def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0
             return
         except Exception:
             pass
+
 
 
 if __name__ == "__main__":

@@ -7,12 +7,12 @@ After=network-online.target sound.target multi-user.target
 [Service]
 Type=simple
 User=%u
-WorkingDirectory=/home/%u/robo-assisant
-ExecStart=/home/%u/robo-assisant/venv/bin/python main.py --wake-word
+WorkingDirectory=/home/%u/up-robo
+ExecStart=/home/%u/up-robo/venv/bin/python main.py --wake-word
 
 # Environment variables setup
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/home/%u/robo-assisant/.env
+EnvironmentFile=-/home/%u/up-robo/.env
 
 # Restart policies (restarts on crash after 10 seconds; avoids rapid infinite loops)
 Restart=on-failure

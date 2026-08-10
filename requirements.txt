@@ -11,6 +11,8 @@ gTTS>=2.5.1
 pyttsx3>=2.90
 onnxruntime>=1.14.0
 tqdm>=4.65.0
+pygame>=2.5.0
+
 # Note for openwakeword on Python 3.13+ Linux (RPi ARM64):
 # Run: pip install openwakeword --no-deps
 
