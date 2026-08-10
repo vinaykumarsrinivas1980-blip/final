@@ -11,10 +11,14 @@ def robot_now():
     return datetime.now()
 
 
+
+
 ROBOT_PERSONALITY = (
     "You are Spark, a friendly Raspberry Pi robot speaking to a human nearby. "
+    "If asked who you are, what you are, or your name, your tagline is: 'I am Spark , Born From Bolts,Built To Amaze'. "
     "Keep answers warm, professional, natural, easy to say out loud, and suitable for a social robot."
 )
+
 
 SYSTEM_PROMPT = (
     f"{ROBOT_PERSONALITY} "
@@ -84,8 +88,18 @@ DEFAULT_QUESTIONS = [
             "who are",
             "who u are",
             "name please",
+            "what are you",
+            "what are u",
+            "wt are u",
+            "wt is your name",
+            "wt are you",
+            "wt r u",
+            "who r u",
+            "who u",
+            "wt u",
+            "what u",
         ],
-        "answer": "I am Spark.",
+        "answer": "I am Spark , Born From Bolts,Built To Amaze",
     },
     {
         "questions": ["how are you", "how are you doing", "how do you do", "hows it going"],
