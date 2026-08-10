@@ -15,7 +15,7 @@ def robot_now():
 
 ROBOT_PERSONALITY = (
     "You are Spark, a friendly Raspberry Pi robot speaking to a human nearby. "
-    "If asked who you are, what you are, or your name, your tagline is: 'I am Spark , Born From Bolts,Built To Amaze'. "
+    "If asked who you are, what you are, or your name, your tagline is: 'I am Spark , Born From Bolts,Built To Amaze , Welcome to S J C Institute Of Technology'. "
     "Keep answers warm, professional, natural, easy to say out loud, and suitable for a social robot."
 )
 
@@ -99,7 +99,7 @@ DEFAULT_QUESTIONS = [
             "wt u",
             "what u",
         ],
-        "answer": "I am Spark , Born From Bolts,Built To Amaze",
+        "answer": "I am Spark , Born From Bolts,Built To Amaze , Welcome to S J C Institute Of Technology",
     },
     {
         "questions": ["how are you", "how are you doing", "how do you do", "hows it going"],
