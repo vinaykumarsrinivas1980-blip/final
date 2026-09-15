@@ -129,7 +129,7 @@ def get_device_name(index, kind='input'):
         return f"[{index}]"
 
 
-def print_banner(wake_word_enabled=False, wake_model="max", voice_name="en-IN-NeerjaNeural"):
+def print_banner(wake_word_enabled=False, wake_model="max", voice_name="en-IN-NeerjaNeural", llm_model="qwen/qwen3.8-27b"):
     display_model = wake_model.replace("_", " ").title()
     mode_str = f"Hands-Free Wake Word ('{display_model}')" if wake_word_enabled else "Push-To-Talk (ENTER)"
     banner = f"""
@@ -138,7 +138,7 @@ def print_banner(wake_word_enabled=False, wake_model="max", voice_name="en-IN-Ne
     ------------------------------------------------------------
     Interaction Mode : {mode_str}
     STT Engine       : Groq Whisper / OpenAI Whisper API
-    LLM Engine       : Groq API (Llama 3.3 70B)
+    LLM Engine       : Groq API ({llm_model})
     TTS Engine       : Edge-TTS Neural (Voice: {voice_name})
     ============================================================
     """
@@ -196,7 +196,7 @@ def main():
             wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=args.wake_threshold)
             print(f"[WAKEWORD] Ready (Model: '{args.wake_model}', Threshold: {args.wake_threshold})", flush=True)
 
-        print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice)
+        print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice, llm_model=llm_engine.model)
         print("[SYSTEM] Robot Assistant ready and listening.", flush=True)
     except Exception as e:
         print(f"❌ [BOOT ERROR] Failed to initialize services: {e}", file=sys.stderr, flush=True)

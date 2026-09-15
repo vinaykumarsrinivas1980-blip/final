@@ -40,7 +40,7 @@ class LLMEngine:
         else:
             print("⚠️ GROQ_API_KEY missing! LLMEngine will rely on local canned responses.", file=sys.stderr)
 
-        self.model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model = model or os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
         self.system_prompt = system_prompt or SYSTEM_PROMPT
         self.max_memory = max_memory_exchanges * 2  # 2 messages per exchange (user + assistant)
         self.history = self._load_history()
@@ -119,7 +119,7 @@ class LLMEngine:
 
         start_time = time.time()
         models_to_try = [self.model]
-        for fallback in ["llama-3.1-8b-instant", "gemma2-9b-it", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]:
+        for fallback in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound-mini"]:
             if fallback not in models_to_try:
                 models_to_try.append(fallback)
 
