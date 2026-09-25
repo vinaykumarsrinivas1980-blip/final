@@ -18,6 +18,12 @@ __pycache__/
 !haa.mp3
 conversation_history.json
 
+# ONNX models (download/generate locally)
+*.onnx
+
+# Training data (generate locally)
+training_data_stop/
+
 # IDE & OS files
 .vscode/
 .idea/
