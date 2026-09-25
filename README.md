@@ -375,10 +375,19 @@ python main.py
 ## 🎓 Team & Credits
 
 Developed at **S J C Institute of Technology (SJCIT)**, Chikkaballapur, Karnataka.
+
+<p align="center">
+  <img src="team_watermark.jpg" alt="Spark Robot Assistant - Developer Team" width="400"/>
+</p>
+
 - **Department**: Computer Science & Engineering — Artificial Intelligence & Machine Learning
 - **Principal**: Dr. G T Raju
 - **Head of Department**: Dr. Vikas Reddy S
 - **Developer Team**:
-  - **Vinay Kumar**
+  - **Vinay Kumar S**
   - **Tharun L R**
-  - **Shravani**
+  - **Shravani H K**
+  - **Tarun K P**
+
+
+  
