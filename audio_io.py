@@ -512,10 +512,11 @@ def check_keypress_interrupt():
             pass
     return False
 
-def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None, stt_engine=None):
+def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_index=None, wakeword_detector=None, stt_engine=None, stop_detector=None):
     """
     Plays an MP3 or WAV audio file through the specified speaker device index.
-    Supports 100% reliable voice barge-in interruption via openWakeWord ('Hey Jarvis' / 'Alexa'), voice stop commands ('stop'), and keypresses.
+    Supports 100% reliable voice barge-in interruption via local ONNX stop keyword detector ('stop.onnx'),
+    openWakeWord ('Hey Jarvis' / 'Alexa'), voice stop commands ('stop'), and keypresses ('m').
     Returns True if playback was interrupted, False if completed normally.
     """
     if not os.path.exists(filepath):
@@ -537,11 +538,16 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
     interrupted = [False]
     stop_event = threading.Event()
 
+    # Shared state between mic callback and main playback loop for pause-then-listen
+    voice_spike_detected = [False]   # Flag: a voice spike was detected, main loop should pause & listen
+    VOICE_SPIKE_RMS = 1200            # RMS threshold for "someone is talking" (above speaker bleed)
+    spike_cooldown_until = [0.0]      # Prevent rapid re-triggers
+
     # Flush any stale keypresses left over in the Windows console input buffer
     flush_keypress_buffer()
 
     def mic_interrupt_listener():
-        """Background listener monitoring mic for openWakeWord ('Hey Jarvis') and voice stop commands ('stop', 'ruko', etc.) during playback."""
+        """Background listener monitoring mic for stop keyword ('stop.onnx') and openWakeWord ('Hey Jarvis') during playback."""
         target_mic = get_working_device_index('input', mic_device_index)
 
         max_chans = 2
@@ -586,7 +592,24 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             if stop_event.is_set():
                 return
 
-            # 1. Check openWakeWord neural hits ("alexa", "hey_jarvis", "max") during playback
+            # 1. Voice spike detection for pause-then-listen stop keyword.
+            #    We DON'T run the ONNX model in the callback (echo contaminates it).
+            #    Instead, we detect a loud voice spike and set a flag for the main loop
+            #    to pause playback, listen in clean silence, then decide.
+            if stop_detector and not voice_spike_detected[0]:
+                try:
+                    current_t = time.time()
+                    if current_t < spike_cooldown_until[0]:
+                        pass  # In cooldown, skip
+                    else:
+                        audio_f32 = indata.astype(np.float32)
+                        rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
+                        if rms > VOICE_SPIKE_RMS:
+                            voice_spike_detected[0] = True
+                except Exception:
+                    pass
+
+            # 2. Check openWakeWord neural hits ("alexa", "hey_jarvis", "max") during playback
             if wakeword_detector:
                 hit = wakeword_detector.predict_frame(indata, override_threshold=0.50)
                 if hit:
@@ -598,6 +621,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                         pass
                     try:
                         pygame.mixer.music.stop()
+                        pygame.mixer.music.unload()
                     except Exception:
                         pass
                     stop_event.set()
@@ -711,7 +735,7 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             print(f"⚠️ [MIC INTERRUPT WARNING] Could not start mic interrupt listener: {last_stream_err}", file=sys.stderr)
 
     # Start background mic listener thread if enabled
-    if (enable_interrupt or wakeword_detector is not None) and stt_engine:
+    if enable_interrupt and (stop_detector is not None or wakeword_detector is not None or stt_engine is not None):
         t = threading.Thread(target=mic_interrupt_listener, daemon=True)
         t.start()
 
@@ -726,6 +750,72 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
                 pygame.mixer.music.stop()
                 print("\n🛑 [KEYBOARD INTERRUPT] Playback stopped by pressing 'm'!", flush=True)
                 break
+
+            # PAUSE-THEN-LISTEN: Voice spike detected by mic callback
+            if stop_detector and voice_spike_detected[0]:
+                voice_spike_detected[0] = False
+
+                # 1. Pause playback so mic hears clean audio (no speaker echo)
+                pygame.mixer.music.pause()
+
+                # 2. Record 0.6s of clean audio from mic
+                listen_frames = []
+                listen_duration = 0.6
+                listen_sr = 16000
+                listen_block = int(round(0.08 * listen_sr))
+                try:
+                    # Query actual mic sample rate
+                    try:
+                        dev_info = sd.query_devices(mic_device_index, 'input')
+                        listen_sr = int(dev_info.get('default_samplerate', 16000))
+                        listen_block = int(round(0.08 * listen_sr))
+                    except Exception:
+                        pass
+
+                    def listen_cb(indata, frames_count, t_info, st):
+                        listen_frames.append(indata.copy())
+
+                    with suppress_c_stderr():
+                        with sd.InputStream(
+                            samplerate=listen_sr,
+                            blocksize=listen_block,
+                            channels=1,
+                            dtype='int16',
+                            device=mic_device_index,
+                            callback=listen_cb
+                        ):
+                            sd.sleep(int(listen_duration * 1000))
+
+                    # 3. Run stop detector on accumulated clean audio
+                    detected_stop = False
+                    for f in listen_frames:
+                        if stop_detector.check_frame(f):
+                            detected_stop = True
+                            break
+
+                    if detected_stop:
+                        print("\n🛑 [STOP COMMAND] Playback interrupted by voice 'stop' keyword!", flush=True)
+                        interrupted[0] = True
+                        try:
+                            pygame.mixer.music.stop()
+                            pygame.mixer.music.unload()
+                        except Exception:
+                            pass
+                        stop_event.set()
+                        break
+                    else:
+                        # Not a stop command — resume playback
+                        pygame.mixer.music.unpause()
+                        spike_cooldown_until[0] = time.time() + 1.5  # 1.5s cooldown to prevent rapid re-triggers
+
+                except Exception:
+                    # On any error, just resume playback
+                    try:
+                        pygame.mixer.music.unpause()
+                    except Exception:
+                        pass
+                    spike_cooldown_until[0] = time.time() + 2.0
+
             time.sleep(0.02)
     except KeyboardInterrupt:
         interrupted[0] = True
@@ -750,77 +840,95 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
 
 
-def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0.6):
+def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0.8):
     """
-    Plays a clear beep sound notification at 60% volume when wake-word is activated.
-    Uses multi-tiered sample rate & engine fallbacks for Raspberry Pi / Linux hardware.
+    Plays a clear beep sound notification at 80% volume when wake-word is activated.
+    Uses multi-tiered engine fallbacks optimized for Raspberry Pi / Linux hardware.
+    On Linux/Pi: tries aplay first (most reliable, no device lock conflicts), then pygame, then sounddevice.
     """
     target_spk = get_working_device_index('output', device_index)
 
-    # 1. Try sounddevice with hardware standard sample rates (44100 Hz, 48000 Hz, 16000 Hz)
-    for sr in [44100, 48000, 16000]:
-        try:
-            num_samples = int(sr * (duration_ms / 1000.0))
-            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
-            audio = volume * np.sin(2 * np.pi * frequency * t)
-            fade_len = int(sr * 0.01)
-            if len(audio) > 2 * fade_len:
-                audio[:fade_len] *= np.linspace(0, 1, fade_len)
-                audio[-fade_len:] *= np.linspace(1, 0, fade_len)
-            audio_pcm = (audio * 32767).astype(np.int16)
-
-            with suppress_c_stderr():
-                sd.play(audio_pcm, samplerate=sr, device=target_spk)
-                sd.wait()
-            return
-        except Exception:
-            continue
-
-    # 2. Pygame mixer sound generator fallback
-    try:
-        import pygame
-        if not pygame.mixer.get_init():
-            try:
-                pygame.mixer.init(frequency=44100, size=-16, channels=1)
-            except Exception:
-                pygame.mixer.init()
-        sr = 44100
+    def _generate_beep_pcm(sr):
+        """Generates a sine-wave beep as int16 PCM at the given sample rate."""
         num_samples = int(sr * (duration_ms / 1000.0))
         t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
-        audio_pcm = (volume * np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
-        sound = pygame.sndarray.make_sound(audio_pcm)
-        sound.play()
-        time.sleep(duration_ms / 1000.0 + 0.05)
-        return
-    except Exception:
-        pass
+        audio = volume * np.sin(2 * np.pi * frequency * t)
+        fade_len = int(sr * 0.01)
+        if len(audio) > 2 * fade_len:
+            audio[:fade_len] *= np.linspace(0, 1, fade_len)
+            audio[-fade_len:] *= np.linspace(1, 0, fade_len)
+        return (audio * 32767).astype(np.int16)
 
-    # 3. Linux ALSA direct aplay CLI fallback (Raspberry Pi OS)
+    # Boost ALSA volume on Linux/Pi before any playback attempt
+    if sys.platform != 'win32':
+        boost_alsa_system_volume()
+
+    # --- Linux / Raspberry Pi: try aplay FIRST (most reliable, avoids pygame device lock) ---
     if sys.platform != 'win32':
         try:
             temp_beep = "/tmp/temp_beep.wav"
             sr = 44100
-            num_samples = int(sr * (duration_ms / 1000.0))
-            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
-            audio_pcm = (volume * np.sin(2 * np.pi * frequency * t) * 32767).astype(np.int16)
+            audio_pcm = _generate_beep_pcm(sr)
             with wave.open(temp_beep, 'wb') as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(sr)
                 wf.writeframes(audio_pcm.tobytes())
-            os.system(f"aplay -q {temp_beep} >/dev/null 2>&1")
-            return
-        except Exception:
-            pass
+            # Use subprocess for proper error checking instead of os.system
+            import subprocess
+            result = subprocess.run(
+                ["aplay", "-q", temp_beep],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                return
+            else:
+                print(f"⚠️ [BEEP] aplay failed (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
+        except FileNotFoundError:
+            print("⚠️ [BEEP] aplay not found on this system, trying next fallback...", file=sys.stderr)
+        except Exception as e:
+            print(f"⚠️ [BEEP] aplay fallback error: {e}", file=sys.stderr)
 
-    # 4. Windows winsound fallback
+    # --- Pygame Sound object (works alongside pygame.mixer.music without conflicts) ---
+    try:
+        import pygame
+        if not pygame.mixer.get_init():
+            try:
+                pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=1024)
+            except Exception:
+                pygame.mixer.init()
+        mixer_freq = pygame.mixer.get_init()[0] if pygame.mixer.get_init() else 44100
+        audio_pcm = _generate_beep_pcm(mixer_freq)
+        sound = pygame.sndarray.make_sound(audio_pcm)
+        sound.set_volume(volume)
+        sound.play()
+        time.sleep(duration_ms / 1000.0 + 0.05)
+        return
+    except Exception as e:
+        print(f"⚠️ [BEEP] pygame fallback error: {e}", file=sys.stderr)
+
+    # --- sounddevice sd.play() (may conflict with pygame mixer on single-output Pi devices) ---
+    for sr in [44100, 48000, 16000]:
+        try:
+            audio_pcm = _generate_beep_pcm(sr)
+            with suppress_c_stderr():
+                sd.play(audio_pcm, samplerate=sr, device=target_spk)
+                sd.wait()
+            return
+        except Exception as e:
+            print(f"⚠️ [BEEP] sounddevice @ {sr}Hz error: {e}", file=sys.stderr)
+            continue
+
+    # --- Windows winsound fallback ---
     if sys.platform == 'win32':
         try:
             import winsound
             winsound.Beep(frequency, duration_ms)
             return
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ [BEEP] winsound error: {e}", file=sys.stderr)
+
+    print("❌ [BEEP] All playback methods failed! Check audio hardware.", file=sys.stderr)
 
 
 

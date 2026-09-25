@@ -59,7 +59,7 @@ from audio_io import (
 from stt import SpeechToText
 from llm import LLMEngine
 from tts import TextToSpeech
-from wakeword import WakeWordDetector
+from wakeword import WakeWordDetector, StopDetector
 from prompts import is_stop_command
 
 
@@ -196,6 +196,16 @@ def main():
             wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=args.wake_threshold)
             print(f"[WAKEWORD] Ready (Model: '{args.wake_model}', Threshold: {args.wake_threshold})", flush=True)
 
+        stop_detector = None
+        stop_model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop.onnx")
+        if os.path.exists(stop_model_path):
+            try:
+                stop_thresh = float(os.getenv("STOP_THRESHOLD", "0.55"))
+                stop_detector = StopDetector(model_name="stop", threshold=stop_thresh)
+                print(f"[STOPDETECTOR] Ready (Model: 'stop.onnx', Threshold: {stop_detector.threshold})", flush=True)
+            except Exception as e:
+                print(f"⚠️ [STOPDETECTOR] Could not load stop model: {e}", file=sys.stderr, flush=True)
+
         print_banner(wake_word_enabled=wake_word_enabled, wake_model=args.wake_model, voice_name=tts_engine.voice, llm_model=llm_engine.model)
         print("[SYSTEM] Robot Assistant ready and listening.", flush=True)
     except Exception as e:
@@ -294,6 +304,12 @@ def main():
 
             print(f"🤖 Assistant: \"{response_text}\"", flush=True)
 
+            # Guard: skip TTS if LLM returned empty/whitespace response
+            if not response_text or not response_text.strip():
+                print("⚠️ LLM returned empty response. Skipping TTS.", flush=True)
+                in_active_session = False
+                continue
+
             # 4. TEXT TO SPEECH
             print("🔊 [4/4 SPEAKING] Synthesizing speech...", flush=True)
             tts_start = time.time()
@@ -303,21 +319,23 @@ def main():
             if is_shutdown_requested():
                 break
 
-            # 5. AUDIO PLAYBACK (KEYBOARD 'M' INTERRUPT ACTIVE)
-            print("🔊 [4/4 SPEAKING] Playing speech response... (Press 'm' on keyboard to stop TTS)", flush=True)
+            # 5. AUDIO PLAYBACK (VOICE 'STOP' & KEYBOARD 'M' INTERRUPT ACTIVE)
+            stop_notice = "Say 'STOP' or press 'm' to stop speech" if stop_detector else "Press 'm' to stop speech"
+            print(f"🔊 [4/4 SPEAKING] Playing speech response... ({stop_notice})", flush=True)
             play_start = time.time()
             was_interrupted = play_audio(
                 speech_file,
                 device_index=spk_idx,
-                enable_interrupt=False,  # Voice interrupt disabled; press 'm' on keyboard to stop TTS
+                enable_interrupt=True,
                 mic_device_index=mic_idx,
-                wakeword_detector=None,
-                stt_engine=None
+                wakeword_detector=None,   # Disabled during playback — own TTS voice triggers false wake word hits
+                stt_engine=None,
+                stop_detector=stop_detector  # Local ONNX 'stop' keyword handles voice barge-in
             )
             play_latency = time.time() - play_start
 
             if was_interrupted:
-                print("\n🛑 [INTERRUPTED] TTS playback stopped by pressing 'm'.", flush=True)
+                print("\n🛑 [INTERRUPTED] TTS playback stopped by user interrupt.", flush=True)
                 in_active_session = False
                 time.sleep(0.3)
                 continue

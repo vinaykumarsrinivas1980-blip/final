@@ -281,6 +281,49 @@ class WakeWordDetector:
             print(f"❌ [WAKE WORD Error] Streaming error: {err}", file=sys.stderr)
             return False
 
+class StopDetector:
+    """Dedicated local openWakeWord detector for the 'stop' keyword."""
+    def __init__(self, model_name="stop", threshold=None):
+        target_key = model_name.lower().strip()
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        custom_model_path = os.path.join(base_dir, f"{target_key}.onnx")
+        if not os.path.exists(custom_model_path):
+            raise FileNotFoundError(f"Stop keyword ONNX model not found: {custom_model_path}")
+
+        if threshold is None:
+            try:
+                threshold = float(os.getenv("STOP_THRESHOLD", "0.55"))
+            except Exception:
+                threshold = 0.55
+        self.threshold = max(0.05, min(0.95, threshold))
+        self.model_name = target_key
+
+        from openwakeword.model import Model
+        with suppress_c_stderr():
+            self.model = Model(wakeword_models=[custom_model_path], inference_framework="onnx")
+        print(f"✅ [StopDetector] Loaded local ONNX interrupt model: {custom_model_path} (Threshold: {self.threshold})")
+
+    def check_frame(self, indata, override_threshold=None):
+        """Checks raw audio frame for 'stop' keyword. Returns True if detected."""
+        if not self.model:
+            return False
+        thresh = override_threshold if override_threshold is not None else self.threshold
+
+        if indata.ndim > 1 and indata.shape[1] > 1:
+            frame = indata.mean(axis=1).astype(np.float32)
+        else:
+            frame = indata.flatten().astype(np.float32)
+
+        if len(frame) != CHUNK_SIZE and len(frame) > 0:
+            frame = signal.resample(frame, CHUNK_SIZE)
+
+        frame = np.clip(frame * 1.5, -32768, 32767).astype(np.int16)
+        pred = self.model.predict(frame)
+        for name, score in pred.items():
+            if score >= thresh:
+                return True
+        return False
+
 
 if __name__ == "__main__":
     print("Testing openWakeWord local detector...")

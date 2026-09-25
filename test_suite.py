@@ -145,6 +145,25 @@ def test_audio_io_module():
     print(f"  • Resolved Working Output Speaker Index   : {spk_idx}")
     print("✅ Audio I/O tests completed.")
 
+def test_stop_detector_module():
+    print("\n--- 🧪 TEST 7: StopDetector ONNX Module ---")
+    import os
+    from wakeword import StopDetector
+    
+    stop_onnx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop.onnx")
+    if not os.path.exists(stop_onnx):
+        print("  ⚠️ stop.onnx not found, skipping StopDetector test.")
+        return
+        
+    detector = StopDetector(model_name="stop", threshold=0.55)
+    assert detector.threshold == 0.55
+    
+    # Test silence rejection
+    frame = np.zeros(1280, dtype=np.int16)
+    assert not detector.check_frame(frame), "StopDetector falsely triggered on silence!"
+    
+    print("✅ StopDetector ONNX module tests passed.")
+
 def run_all_tests():
     print("==================================================")
     print("🚀 RUNNING ALL REAL-WORLD SUITE TESTS FOR ROBO2")
@@ -156,6 +175,7 @@ def run_all_tests():
     test_tts_module()
     test_wakeword_module()
     test_audio_io_module()
+    test_stop_detector_module()
     
     print("\n🎉 ALL TESTS COMPLETED SUCCESSFULLY!")
 
