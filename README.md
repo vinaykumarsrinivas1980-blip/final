@@ -20,8 +20,8 @@ Developed by the student team at **S J C Institute of Technology (SJCIT)**, Depa
   2. **Google Free Web STT** (`speech_recognition` — 100% Free, no API keys required)
   3. **OpenAI Whisper API** (Optional fallback)
 - **Large Language Model (LLM)**:
-  - Groq API with 5-exchange short-term memory buffer and automatic multi-model fallback:
-    `llama-3.3-70b-versatile` ➔ `llama-3.1-8b-instant` ➔ `gemma2-9b-it` ➔ `mixtral-8x7b-32768` (100% Free tier up to 14,400 requests/day).
+  - Groq API with short-term memory buffer and automatic multi-model fallback:
+    `qwen/qwen3.8-27b` ➔ `openai/gpt-oss-120b` ➔ `openai/gpt-oss-20b` ➔ `groq/compound-mini` (100% Free tier).
 - **Text-to-Speech (TTS)**: 5-tier fallback cascade ensuring speech output never fails:
   1. **Edge-TTS**: Free, ultra-realistic Microsoft Neural voices (no API key needed)
   2. **gTTS**: Free Google Translate TTS
@@ -35,31 +35,21 @@ Developed by the student team at **S J C Institute of Technology (SJCIT)**, Depa
 ## 2. Project Folder Structure 📁
 
 ```
-up-robo/
+robo-assisant/
 ├── .env.example            # Template for API keys & device overrides
 ├── requirements.txt        # Python package dependencies
 ├── robot-assistant.service # Systemd background service unit file
 ├── spark.onnx              # Custom trained local openWakeWord neural model file
+├── stop.onnx               # Local ONNX stop keyword detector model
 ├── audio_io.py             # Audio hardware discovery, VAD recording, ALSA playback & signal cleanup
 ├── wakeword.py             # openWakeWord offline local wake-word detector ("Spark" / "Hey Jarvis" / "Max")
 ├── prompts.py              # Robot personality, multi-lingual rules, and 0ms local canned replies
 ├── stt.py                  # Groq Whisper & Google Free Web STT handler
 ├── llm.py                  # Groq LLM engine with memory buffer, canned responses & model fallbacks
 ├── tts.py                  # 5-Tier TTS fallback (Edge-TTS, gTTS, pyttsx3, espeak)
-├── test_suite.py           # Comprehensive integration & unit test suite
 ├── main.py                 # Main orchestrator CLI & systemd daemon loop
 └── README.md               # Setup & VNC remote management documentation
 ```
-
-### 📄 Source Code Modules:
-- [main.py](file:///C:/Users/lrtha/up-robo/main.py) — System Orchestrator CLI & background daemon
-- [audio_io.py](file:///C:/Users/lrtha/up-robo/audio_io.py) — Audio device enumeration, dynamic VAD recording & playback
-- [wakeword.py](file:///C:/Users/lrtha/up-robo/wakeword.py) — Local openWakeWord ONNX detector (`spark.onnx`)
-- [llm.py](file:///C:/Users/lrtha/up-robo/llm.py) — Groq LLM engine & conversation memory history
-- [stt.py](file:///C:/Users/lrtha/up-robo/stt.py) — 3-Tier Speech-to-Text engine (Groq Whisper ➔ Google ➔ OpenAI)
-- [tts.py](file:///C:/Users/lrtha/up-robo/tts.py) — 5-Tier Text-to-Speech cascade (Edge-TTS ➔ gTTS ➔ pyttsx3 ➔ espeak ➔ OpenAI)
-- [prompts.py](file:///C:/Users/lrtha/up-robo/prompts.py) — Personality, instant 0ms canned replies & stop commands
-- [test_suite.py](file:///C:/Users/lrtha/up-robo/test_suite.py) — Integration test suite runner
 
 ---
 
@@ -277,25 +267,22 @@ sudo journalctl -u robot-assistant -p err
 Test each component individually to verify hardware and API setup:
 
 ```bash
-# 1. Run full automated integration test suite
-python test_suite.py
-
-# 2. List all connected microphones and speakers
+# 1. List all connected microphones and speakers
 python audio_io.py --list
 
-# 3. Test USB Mic recording and speaker playback
+# 2. Test USB Mic recording and speaker playback
 python audio_io.py --test-mic
 
-# 4. Test Speech-to-Text (STT)
+# 3. Test Speech-to-Text (STT)
 python stt.py test_recording.wav
 
-# 5. Test Large Language Model (LLM)
+# 4. Test Large Language Model (LLM)
 python llm.py "What is the capital of Japan?"
 
-# 6. Test Text-to-Speech (TTS)
+# 5. Test Text-to-Speech (TTS)
 python tts.py "Hello! Voice assistant test successful."
 
-# 7. Test openWakeWord wake word detector
+# 6. Test openWakeWord wake word detector
 python wakeword.py
 ```
 
@@ -387,7 +374,4 @@ Developed at **S J C Institute of Technology (SJCIT)**, Chikkaballapur, Karnatak
   - **Vinay Kumar S**
   - **Tharun L R**
   - **Shravani H K**
-  - **Tarun K P**
-
-
-  
+  - **Tarun K P**
