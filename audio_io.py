@@ -922,18 +922,20 @@ def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0
                 wf.writeframes(audio_pcm.tobytes())
             # Use subprocess for proper error checking instead of os.system
             import subprocess
-            result = subprocess.run(
-                ["aplay", "-q", temp_beep],
-                capture_output=True, text=True, timeout=5
-            )
+            cmd = ["aplay", "-q"]
+            if target_spk is not None:
+                # Try explicit hardware output if target speaker index is known
+                cmd.extend(["-D", f"plughw:{target_spk},0"])
+            cmd.append(temp_beep)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
                 return
-            else:
-                print(f"⚠️ [BEEP] aplay failed (rc={result.returncode}): {result.stderr.strip()}", file=sys.stderr)
-        except FileNotFoundError:
-            print("⚠️ [BEEP] aplay not found on this system, trying next fallback...", file=sys.stderr)
-        except Exception as e:
-            print(f"⚠️ [BEEP] aplay fallback error: {e}", file=sys.stderr)
+            # Fallback to default aplay
+            res_default = subprocess.run(["aplay", "-q", temp_beep], capture_output=True, text=True, timeout=5)
+            if res_default.returncode == 0:
+                return
+        except Exception:
+            pass
 
     # --- Pygame Sound object (works alongside pygame.mixer.music without conflicts) ---
     try:
