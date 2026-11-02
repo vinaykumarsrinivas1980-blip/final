@@ -204,7 +204,7 @@ DEFAULT_QUESTIONS = [
             "who built u",
             "who designed u",
         ],
-        "answer": "I was created by Captain Nishchitha, Tarun KP, Tharun, Vinay, and Shravani.",
+        "answer": "I was created by Tarun KP, Tharun, Vinay, and Shravani.",
     },
     {
         "questions": ["who is shravani", "who shravani", "about shravani", "tell me about shravani"],
@@ -218,10 +218,6 @@ DEFAULT_QUESTIONS = [
             "shravani meaning",
         ],
         "answer": "Shravani comes from Sanskrit and means 'born in the month of Shravan' or 'one who listens attentively'. She is also one of the core creators of this robot project.",
-    },
-    {
-        "questions": ["who is nishchitha", "who nishchitha", "captain nishchitha", "who is the captain"],
-        "answer": "Nishchitha is the captain and lead creator of this robot project.",
     },
     {
         "questions": ["who is tharun", "who tharun", "about tharun"],

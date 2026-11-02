@@ -173,8 +173,8 @@ def find_usb_device(kind='input'):
         if 'usb' in name and dev.get(ch_key, 0) > 0:
             return index
 
-    # Priority 2: Common Raspberry Pi USB Audio soundcard chipsets & ALSA descriptors
-    rpi_keywords = ['pnp', 'c-media', 'soundcard', 'usb-audio', 'headset', 'mic', 'microphone', 'sysdefault', 'plughw']
+    # Priority 2: Common Raspberry Pi USB Audio soundcard chipsets, I2S HATs & ALSA descriptors
+    rpi_keywords = ['pnp', 'c-media', 'soundcard', 'usb-audio', 'headset', 'mic', 'microphone', 'respeaker', 'seeed', 'wm8960', 'voicecard', 'i2s', 'codec', 'audiohat', 'sysdefault', 'plughw']
     for index, dev in enumerate(devices):
         name = dev['name'].lower()
         if any(kw in name for kw in rpi_keywords) and dev.get(ch_key, 0) > 0:
@@ -327,22 +327,22 @@ class AudioRecorder:
         audio_data = np.concatenate(self.frames, axis=0)
         duration = len(audio_data) / float(self.actual_sample_rate)
 
+        # Convert to 1D mono for Whisper STT
+        if audio_data.ndim > 1:
+            if audio_data.shape[1] == 1:
+                audio_data = audio_data.flatten()
+            else:
+                audio_data = audio_data.mean(axis=1).astype(DTYPE)
+
         # Resample to standard 16kHz if captured at a hardware sample rate != 16000Hz
         if self.actual_sample_rate != SAMPLE_RATE:
             num_samples = int(round(len(audio_data) * SAMPLE_RATE / float(self.actual_sample_rate)))
-            if audio_data.ndim > 1:
-                resampled_channels = []
-                for c in range(audio_data.shape[1]):
-                    resampled_c = signal.resample(audio_data[:, c].astype(np.float32), num_samples)
-                    resampled_channels.append(resampled_c)
-                audio_data = np.column_stack(resampled_channels).astype(DTYPE)
-            else:
-                audio_data = signal.resample(audio_data.astype(np.float32), num_samples).astype(DTYPE)
+            audio_data = signal.resample(audio_data.astype(np.float32), num_samples).astype(DTYPE)
 
         # Write to WAV file
         os.makedirs(os.path.dirname(os.path.abspath(output_filepath)), exist_ok=True)
         with wave.open(output_filepath, 'wb') as wf:
-            wf.setnchannels(CHANNELS if audio_data.ndim == 1 else audio_data.shape[1])
+            wf.setnchannels(1)
             wf.setsampwidth(2)  # 16-bit PCM = 2 bytes
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes(audio_data.tobytes())
@@ -366,51 +366,63 @@ def record_push_to_talk(output_filepath="temp_input.wav", device_index=None):
     print(f"💾 Audio saved: {filepath} ({duration:.2f} seconds)")
     return filepath, duration
 
-def record_smart_audio(output_filepath="temp_input.wav", device_index=None, silence_timeout=1.0, max_duration=5.0):
+def record_smart_audio(output_filepath="temp_input.wav", device_index=None, silence_timeout=1.6, max_duration=8.0):
     """
-    Dynamic VAD Audio Recording.
-    Automatically starts recording, detects speech onset, and stops as soon as
-    1.0 second of silence is detected (or max_duration safety cap is reached).
+    Dynamic Adaptive VAD Audio Recording.
+    Calibrates to ambient room noise, detects speech onset, and finishes cleanly
+    after silence_timeout seconds of silence or when max_duration is reached.
     """
     recorder = AudioRecorder(device_index=device_index)
     recorder.start_recording()
     
-    print("🎙️  [LISTENING] Speak your command now...")
+    print("🎙️  [LISTENING] Speak your command now...", flush=True)
     
     start_time = time.time()
-    last_speech_time = time.time()
+    last_speech_time = None
     speech_started = False
     
-    # RMS threshold for detecting active speech (sensitive threshold for all mics)
-    SPEECH_RMS_THRESHOLD = 120
+    ambient_samples = []
+    speech_threshold = 280.0
+    calibrated = False
     
-    while True:
+    while not is_shutdown_requested():
         elapsed = time.time() - start_time
         if elapsed > max_duration:
-            print(f"⏳ [STOPPED] Max recording duration reached ({max_duration:.0f}s).")
+            print(f"⏳ [STOPPED] Max recording duration reached ({max_duration:.0f}s).", flush=True)
             break
             
         if recorder.frames:
-            # Check recent audio frame volume (RMS)
             latest_chunk = recorder.frames[-1]
             if len(latest_chunk) > 0:
-                rms = np.sqrt(np.mean(latest_chunk.astype(np.float32)**2))
+                rms = float(np.sqrt(np.mean(latest_chunk.astype(np.float32)**2)))
                 
-                if rms > SPEECH_RMS_THRESHOLD:
-                    if not speech_started:
-                        speech_started = True
-                    last_speech_time = time.time()
-                elif speech_started:
-                    # Check silence duration after speech started
-                    silence_duration = time.time() - last_speech_time
-                    if silence_duration >= silence_timeout:
-                        print(f"⏹️  [STOPPED] Silence detected ({silence_duration:.1f}s). Processing...")
+                # Calibrate ambient noise from initial 250ms of frames
+                if not calibrated:
+                    ambient_samples.append(rms)
+                    if len(ambient_samples) >= 4:
+                        ambient_rms = float(np.mean(ambient_samples))
+                        speech_threshold = max(260.0, ambient_rms * 1.8)
+                        calibrated = True
+                else:
+                    if rms > speech_threshold:
+                        if not speech_started:
+                            speech_started = True
+                            print("🗣️  [SPEECH DETECTED] Listening...", flush=True)
+                        last_speech_time = time.time()
+                    elif speech_started:
+                        silence_duration = time.time() - last_speech_time
+                        if silence_duration >= silence_timeout:
+                            print(f"⏹️  [STOPPED] Silence detected ({silence_duration:.1f}s). Processing...", flush=True)
+                            break
+                    elif elapsed > 4.0:
+                        # No speech detected after wake word
+                        print("⏳ [STOPPED] No speech detected after wake word.", flush=True)
                         break
         
-        sd.sleep(50)
+        sd.sleep(40)
         
     filepath, duration = recorder.stop_recording(output_filepath)
-    print(f"💾 Audio captured: {filepath} ({duration:.2f} seconds)")
+    print(f"💾 Audio captured: {filepath} ({duration:.2f} seconds)", flush=True)
     return filepath, duration
 
 
@@ -466,7 +478,7 @@ def normalize_and_boost_audio(data, gain_db=6.0):
 
 
 def flush_keypress_buffer():
-    """Flushes stale console keypresses from buffer (Windows & Linux/Raspberry Pi)."""
+    """Flushes stale console keypresses from buffer (Windows & Linux/Raspberry Pi). Safe for headless/systemd."""
     if sys.platform == 'win32':
         import msvcrt
         while msvcrt.kbhit():
@@ -475,15 +487,20 @@ def flush_keypress_buffer():
             except Exception:
                 break
     else:
+        # Check if running interactively with a TTY; skip in headless systemd daemon
+        if not sys.stdin or not hasattr(sys.stdin, 'isatty') or not sys.stdin.isatty():
+            return
         try:
             import select
             while select.select([sys.stdin], [], [], 0.0)[0]:
-                sys.stdin.read(1)
+                ch = sys.stdin.read(1)
+                if not ch:
+                    break
         except Exception:
             pass
 
 def check_keypress_interrupt():
-    """Returns True if user has pressed 'm' / 'M' (or ENTER/space) on keyboard in CLI (Windows & Linux/Raspberry Pi)."""
+    """Returns True if user has pressed 'm' / 'M' (or ENTER/space) on keyboard in CLI (Windows & Linux/Raspberry Pi). Safe for headless."""
     if sys.platform == 'win32':
         import msvcrt
         if msvcrt.kbhit():
@@ -491,6 +508,9 @@ def check_keypress_interrupt():
             if ch.lower() in [b'm', b'\r', b'\n', b' ', b'q']:
                 return True
     else:
+        # Check if running interactively with a TTY; skip in headless systemd daemon
+        if not sys.stdin or not hasattr(sys.stdin, 'isatty') or not sys.stdin.isatty():
+            return False
         try:
             import select
             if select.select([sys.stdin], [], [], 0.0)[0]:
@@ -500,13 +520,15 @@ def check_keypress_interrupt():
                     try:
                         tty.setcbreak(sys.stdin.fileno())
                         ch = sys.stdin.read(1)
+                        if not ch:
+                            return False
                         if ch.lower() in ['m', '\r', '\n', ' ', 'q']:
                             return True
                     finally:
                         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
                 except Exception:
                     line = sys.stdin.readline()
-                    if 'm' in line.lower() or line:
+                    if line and ('m' in line.lower() or line.strip() in ['q', 'exit', 'quit']):
                         return True
         except Exception:
             pass
@@ -825,7 +847,31 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
             pass
         raise
     except Exception as err:
-        print(f"⚠️ Playback error: {err}", file=sys.stderr)
+        print(f"⚠️ Pygame playback error: {err}. Trying system CLI audio fallback...", file=sys.stderr)
+        if sys.platform != 'win32' and os.path.exists(filepath):
+            import subprocess, shutil
+            cmd = None
+            if filepath.lower().endswith('.mp3') and shutil.which("mpg123"):
+                cmd = ["mpg123", "-q", filepath]
+            elif filepath.lower().endswith('.wav') and shutil.which("aplay"):
+                cmd = ["aplay", "-q", filepath]
+            elif shutil.which("ffplay"):
+                cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", filepath]
+
+            if cmd:
+                try:
+                    proc = subprocess.Popen(cmd)
+                    while proc.poll() is None and not stop_event.is_set() and not is_shutdown_requested():
+                        if check_keypress_interrupt():
+                            interrupted[0] = True
+                            proc.terminate()
+                            print("\n🛑 [KEYBOARD INTERRUPT] Playback stopped by pressing 'm'!", flush=True)
+                            break
+                        time.sleep(0.05)
+                    if (stop_event.is_set() or is_shutdown_requested()) and proc.poll() is None:
+                        proc.terminate()
+                except Exception as cli_err:
+                    print(f"⚠️ System CLI playback fallback error: {cli_err}", file=sys.stderr)
     finally:
         stop_event.set()
         try:
@@ -897,8 +943,12 @@ def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0
                 pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=1024)
             except Exception:
                 pygame.mixer.init()
-        mixer_freq = pygame.mixer.get_init()[0] if pygame.mixer.get_init() else 44100
+        init_info = pygame.mixer.get_init()
+        mixer_freq = init_info[0] if init_info else 44100
+        mixer_channels = init_info[2] if init_info and len(init_info) > 2 else 1
         audio_pcm = _generate_beep_pcm(mixer_freq)
+        if mixer_channels == 2 and audio_pcm.ndim == 1:
+            audio_pcm = np.column_stack((audio_pcm, audio_pcm))
         sound = pygame.sndarray.make_sound(audio_pcm)
         sound.set_volume(volume)
         sound.play()

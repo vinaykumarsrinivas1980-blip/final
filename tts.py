@@ -46,7 +46,7 @@ class TextToSpeech:
         """Asynchronously run edge-tts to generate high quality speech with volume boost."""
         import edge_tts
         async def _speak(v):
-            communicate = edge_tts.Communicate(text, v, volume="+50%")
+            communicate = edge_tts.Communicate(text, v, volume="+0%")
             await communicate.save(output_filepath)
         
         def _run_async(coro):
@@ -130,15 +130,19 @@ class TextToSpeech:
             except Exception as e:
                 print(f"⚠️ OpenAI TTS failed ({e}), trying system espeak fallback...")
 
-        # 5. Try system CLI fallback (espeak at max volume -a 200 on Linux / Raspberry Pi)
+        # 5. Try system CLI fallback (espeak-ng / espeak at max volume -a 200 on Linux / Raspberry Pi)
         if sys.platform != 'win32':
             try:
-                wav_out = output_filepath.rsplit('.', 1)[0] + '.wav'
-                ret = os.system(f"espeak -a 200 -v en \"{text}\" -w \"{wav_out}\" 2>/dev/null")
-                if ret == 0 and os.path.exists(wav_out) and os.path.getsize(wav_out) > 0:
-                    elapsed = time.time() - start_time
-                    print(f"⚡ [TTS (espeak CLI)] Audio synthesized in {elapsed:.2f}s -> {wav_out}")
-                    return wav_out
+                import shutil
+                espeak_cmd = "espeak-ng" if shutil.which("espeak-ng") else ("espeak" if shutil.which("espeak") else None)
+                if espeak_cmd:
+                    wav_out = output_filepath.rsplit('.', 1)[0] + '.wav'
+                    import subprocess
+                    ret = subprocess.run([espeak_cmd, "-a", "200", "-v", "en", text, "-w", wav_out], capture_output=True, timeout=10)
+                    if ret.returncode == 0 and os.path.exists(wav_out) and os.path.getsize(wav_out) > 0:
+                        elapsed = time.time() - start_time
+                        print(f"⚡ [TTS ({espeak_cmd} CLI)] Audio synthesized in {elapsed:.2f}s -> {wav_out}")
+                        return wav_out
             except Exception:
                 pass
 

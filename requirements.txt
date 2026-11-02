@@ -12,8 +12,11 @@ pyttsx3>=2.90
 onnxruntime>=1.14.0
 tqdm>=4.65.0
 pygame>=2.5.0
+SpeechRecognition>=3.10.0
+requests>=2.28.0
 
-# Note for openwakeword on Python 3.13+ Linux (RPi ARM64):
+# Note for openwakeword on Python 3.11+ Linux (RPi ARM64):
 # Run: pip install openwakeword --no-deps
+
 
 

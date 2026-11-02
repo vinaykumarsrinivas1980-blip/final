@@ -118,52 +118,39 @@ Once connected via VNC desktop:
 
 ## 4. Environment Setup & Auto-Start Configuration ⚙️
 
-### Step 1: Install System Audio Packages (Raspberry Pi OS)
-In the Raspberry Pi Terminal (via VNC or local terminal), install PortAudio and ALSA utilities:
-
-```bash
-sudo apt update
-sudo apt install -y python3-pip python3-dev portaudio19-dev libffi-dev libssl-dev ffmpeg mpg123 espeak aplay alsa-utils
-```
-
----
-
-### Step 2: Setup Python Environment & Dependencies
-Clone or navigate to the repository on your Pi:
+### Step 1: Automated 1-Script Setup (Recommended)
+On your Raspberry Pi, navigate to the folder and run the automated setup script:
 
 ```bash
 cd ~/robo-assisant
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install openwakeword without tflite (compatible with ARM64 / Python 3.13)
-pip install openwakeword --no-deps
+bash setup_rpi.sh
 ```
+
+This single command will:
+1. Verify 64-bit ARM architecture.
+2. Install all required system audio packages (`portaudio`, `alsa-utils`, `ffmpeg`, `mpg123`, `espeak-ng`).
+3. Auto-detect your USB soundcard and set up `~/.asoundrc` for reliable ALSA audio routing.
+4. Create the `venv` virtual environment and install all Python dependencies + `openwakeword`.
+5. Pre-cache the neural wake word models.
+6. Run the diagnostic `test_suite.py` to verify microphone, speaker, and models.
 
 ---
 
-### Step 3: Configure Environment Variables
-Create your `.env` configuration file:
+### Step 2: Configure API Keys (.env)
+Edit your `.env` file to insert your free Groq API key (get one free at [console.groq.com](https://console.groq.com)):
 
 ```bash
-cp .env.example .env
 nano .env
 ```
 
-Set your free Groq API key (get a free key at [console.groq.com](https://console.groq.com)):
-
 ```ini
 GROQ_API_KEY=gsk_your_groq_api_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=qwen/qwen3.8-27b
 TTS_VOICE=en-IN-NeerjaNeural
 WAKE_MODEL=spark
 WAKE_THRESHOLD=0.40
 
-# Audio Device Overrides (Optional - leave empty for auto-detecting USB mic/speaker)
+# Audio Device Overrides (Optional - leave empty for auto-detection)
 MIC_DEVICE_INDEX=
 SPEAKER_DEVICE_INDEX=
 ```
@@ -172,15 +159,13 @@ SPEAKER_DEVICE_INDEX=
 
 ### 🚀 One-Command Launch (Activate Environment & Run)
 
-You can activate the virtual environment and start the robot assistant in **a single command**:
-
 #### On Linux / Raspberry Pi:
 ```bash
-# Hands-Free Wake-Word Mode ("Spark" / "Max" / "Hey Jarvis")
-source venv/bin/activate && python main.py --wake-word
+# Hands-Free Wake-Word Mode ("Spark")
+./run_pi.sh --wake-word
 
 # Push-To-Talk Mode (Press ENTER to talk)
-source venv/bin/activate && python main.py
+./run_pi.sh --push-to-talk
 ```
 
 #### On Windows (PowerShell):
@@ -194,30 +179,21 @@ source venv/bin/activate && python main.py
 
 #### On Windows (CMD):
 ```cmd
-venv\Scripts\activate.bat && python main.py --wake-word
+run.bat
 ```
 
 ---
 
-### Step 4: Install & Enable systemd Boot Service
+### Step 3: Install & Enable systemd Boot Service (Auto-Start on Boot)
 
-To make the assistant start automatically when the Raspberry Pi boots:
+To make the assistant start automatically in the background when the Raspberry Pi powers on:
 
 ```bash
-# 1. Copy the systemd service file
-sudo cp robot-assistant.service /etc/systemd/system/robot-assistant.service
+bash install_service.sh
+```
 
-# 2. Replace %u placeholder with your Pi username (e.g. pi)
-sudo sed -i "s/%u/$USER/g" /etc/systemd/system/robot-assistant.service
+This automatically discovers your current directory and username, configures `/etc/systemd/system/robot-assistant.service`, and enables it with restart-on-failure safety.
 
-# 3. Reload systemd daemon
-sudo systemctl daemon-reload
-
-# 4. Enable service to start automatically on boot
-sudo systemctl enable robot-assistant.service
-
-# 5. Start the service immediately
-sudo systemctl start robot-assistant.service
 ```
 
 ---
@@ -262,9 +238,15 @@ sudo journalctl -u robot-assistant -p err
 
 ---
 
-## 7. Independent Stage Diagnostics 🧪
+## 7. Diagnostics & Hardware Verification 🧪
 
-Test each component individually to verify hardware and API setup:
+Run the all-in-one automated diagnostic suite:
+
+```bash
+python test_suite.py
+```
+
+Or test each component individually:
 
 ```bash
 # 1. List all connected microphones and speakers

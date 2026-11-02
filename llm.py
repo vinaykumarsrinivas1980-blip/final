@@ -20,7 +20,8 @@ import json
 from datetime import datetime
 from prompts import SYSTEM_PROMPT, get_canned_response
 
-HISTORY_FILE = "conversation_history.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+HISTORY_FILE = os.path.join(BASE_DIR, "conversation_history.json")
 
 class LLMEngine:
     def __init__(self, api_key=None, model=None, system_prompt=None, max_memory_exchanges=5):

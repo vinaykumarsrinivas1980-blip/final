@@ -197,10 +197,11 @@ def main():
             print(f"[WAKEWORD] Ready (Model: '{args.wake_model}', Threshold: {args.wake_threshold})", flush=True)
 
         stop_detector = None
+        barge_in_enabled = args.barge_in or os.getenv("ENABLE_VOICE_BARGE_IN", "false").lower() in ("true", "1", "yes")
         stop_model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop.onnx")
-        if os.path.exists(stop_model_path):
+        if barge_in_enabled and os.path.exists(stop_model_path):
             try:
-                stop_thresh = float(os.getenv("STOP_THRESHOLD", "0.55"))
+                stop_thresh = float(os.getenv("STOP_THRESHOLD", "0.75"))
                 stop_detector = StopDetector(model_name="stop", threshold=stop_thresh)
                 print(f"[STOPDETECTOR] Ready (Model: 'stop.onnx', Threshold: {stop_detector.threshold})", flush=True)
             except Exception as e:
@@ -258,7 +259,7 @@ def main():
             # 1. AUDIO RECORDING
             max_rec_sec = float(os.getenv("MAX_RECORD_SECONDS", "5.0"))
             if wake_word_enabled:
-                audio_file, rec_dur = record_smart_audio("input_audio.wav", device_index=mic_idx, silence_timeout=1.0, max_duration=max_rec_sec)
+                audio_file, rec_dur = record_smart_audio("input_audio.wav", device_index=mic_idx, silence_timeout=1.6, max_duration=max_rec_sec)
             else:
                 print("\n🎙️  [1/4 LISTENING] Recording... Press [ENTER] to stop.", flush=True)
                 audio_file, rec_dur = record_push_to_talk("input_audio.wav", device_index=mic_idx)
