@@ -886,101 +886,97 @@ def play_audio(filepath, device_index=None, enable_interrupt=True, mic_device_in
 
 
 
-def play_beep_sound(device_index=None, frequency=1200, duration_ms=180, volume=0.8):
+def play_beep_sound(device_index=None, frequency=1200, duration_ms=200, volume=0.85):
     """
-    Plays a clear beep sound notification at 80% volume when wake-word is activated.
-    Uses multi-tiered engine fallbacks optimized for Raspberry Pi / Linux hardware.
-    On Linux/Pi: tries aplay first (most reliable, no device lock conflicts), then pygame, then sounddevice.
+    Plays an audible beep notification when wake-word is activated.
+    Uses multi-tiered stereo fallbacks compatible with Raspberry Pi HDMI (stereo-only) hardware.
     """
     target_spk = get_working_device_index('output', device_index)
-
-    def _generate_beep_pcm(sr):
-        """Generates a sine-wave beep as int16 PCM at the given sample rate."""
-        num_samples = int(sr * (duration_ms / 1000.0))
-        t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
-        audio = volume * np.sin(2 * np.pi * frequency * t)
-        fade_len = int(sr * 0.01)
-        if len(audio) > 2 * fade_len:
-            audio[:fade_len] *= np.linspace(0, 1, fade_len)
-            audio[-fade_len:] *= np.linspace(1, 0, fade_len)
-        return (audio * 32767).astype(np.int16)
 
     # Boost ALSA volume on Linux/Pi before any playback attempt
     if sys.platform != 'win32':
         boost_alsa_system_volume()
 
-    # --- Linux / Raspberry Pi: try aplay FIRST (most reliable, avoids pygame device lock) ---
-    if sys.platform != 'win32':
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    beep_path = os.path.join(base_dir, "beep.wav")
+
+    # Ensure stereo beep.wav exists on disk
+    if not os.path.exists(beep_path):
         try:
-            temp_beep = "/tmp/temp_beep.wav"
             sr = 44100
-            audio_pcm = _generate_beep_pcm(sr)
-            with wave.open(temp_beep, 'wb') as wf:
-                wf.setnchannels(1)
+            num_samples = int(sr * (duration_ms / 1000.0))
+            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
+            audio = volume * np.sin(2 * np.pi * frequency * t)
+            fade_len = int(sr * 0.015)
+            if len(audio) > 2 * fade_len:
+                audio[:fade_len] *= np.linspace(0, 1, fade_len)
+                audio[-fade_len:] *= np.linspace(1, 0, fade_len)
+            pcm_mono = (audio * 32767).astype(np.int16)
+            pcm_stereo = np.column_stack((pcm_mono, pcm_mono))
+            with wave.open(beep_path, 'wb') as wf:
+                wf.setnchannels(2)
                 wf.setsampwidth(2)
                 wf.setframerate(sr)
-                wf.writeframes(audio_pcm.tobytes())
-            # Use subprocess for proper error checking instead of os.system
-            import subprocess
-            cmd = ["aplay", "-q"]
-            if target_spk is not None:
-                # Try explicit hardware output if target speaker index is known
-                cmd.extend(["-D", f"plughw:{target_spk},0"])
-            cmd.append(temp_beep)
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                return
-            # Fallback to default aplay
-            res_default = subprocess.run(["aplay", "-q", temp_beep], capture_output=True, text=True, timeout=5)
-            if res_default.returncode == 0:
-                return
+                wf.writeframes(pcm_stereo.tobytes())
         except Exception:
             pass
 
-    # --- Pygame Sound object (works alongside pygame.mixer.music without conflicts) ---
+    # --- Tier 1: Pygame Sound (Uses SDL audio subsystem, proven working for HDMI speech playback) ---
     try:
         import pygame
         if not pygame.mixer.get_init():
             try:
-                pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=1024)
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
             except Exception:
                 pygame.mixer.init()
-        init_info = pygame.mixer.get_init()
-        mixer_freq = init_info[0] if init_info else 44100
-        mixer_channels = init_info[2] if init_info and len(init_info) > 2 else 1
-        audio_pcm = _generate_beep_pcm(mixer_freq)
-        if mixer_channels == 2 and audio_pcm.ndim == 1:
-            audio_pcm = np.column_stack((audio_pcm, audio_pcm))
-        sound = pygame.sndarray.make_sound(audio_pcm)
-        sound.set_volume(volume)
-        sound.play()
-        time.sleep(duration_ms / 1000.0 + 0.05)
-        return
-    except Exception as e:
-        print(f"⚠️ [BEEP] pygame fallback error: {e}", file=sys.stderr)
+        if os.path.exists(beep_path):
+            sound = pygame.mixer.Sound(beep_path)
+            sound.set_volume(volume)
+            sound.play()
+            time.sleep(duration_ms / 1000.0 + 0.05)
+            return
+    except Exception:
+        pass
 
-    # --- sounddevice sd.play() (may conflict with pygame mixer on single-output Pi devices) ---
-    for sr in [44100, 48000, 16000]:
+    # --- Tier 2: Linux / Raspberry Pi ALSA aplay with stereo PCM ---
+    if sys.platform != 'win32' and os.path.exists(beep_path):
+        import subprocess, shutil
+        if shutil.which("aplay"):
+            candidates = []
+            if target_spk is not None:
+                candidates.append(["aplay", "-q", "-D", f"plughw:{target_spk},0", beep_path])
+            candidates.append(["aplay", "-q", beep_path])
+            for cmd in candidates:
+                try:
+                    res = subprocess.run(cmd, capture_output=True, timeout=3)
+                    if res.returncode == 0:
+                        return
+                except Exception:
+                    pass
+
+    # --- Tier 3: sounddevice (Stereo 2-channel to prevent HDMI channel errors) ---
+    for sr in [44100, 48000]:
         try:
-            audio_pcm = _generate_beep_pcm(sr)
+            num_samples = int(sr * (duration_ms / 1000.0))
+            t = np.linspace(0, duration_ms / 1000.0, num_samples, endpoint=False)
+            audio = volume * np.sin(2 * np.pi * frequency * t)
+            pcm_mono = (audio * 32767).astype(np.int16)
+            pcm_stereo = np.column_stack((pcm_mono, pcm_mono))
             with suppress_c_stderr():
-                sd.play(audio_pcm, samplerate=sr, device=target_spk)
+                sd.play(pcm_stereo, samplerate=sr, device=target_spk)
                 sd.wait()
             return
-        except Exception as e:
-            print(f"⚠️ [BEEP] sounddevice @ {sr}Hz error: {e}", file=sys.stderr)
+        except Exception:
             continue
 
-    # --- Windows winsound fallback ---
+    # --- Tier 4: Windows winsound fallback ---
     if sys.platform == 'win32':
         try:
             import winsound
             winsound.Beep(frequency, duration_ms)
             return
-        except Exception as e:
-            print(f"⚠️ [BEEP] winsound error: {e}", file=sys.stderr)
-
-    print("❌ [BEEP] All playback methods failed! Check audio hardware.", file=sys.stderr)
+        except Exception:
+            pass
 
 
 
