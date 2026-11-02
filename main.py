@@ -193,8 +193,14 @@ def main():
         
         wakeword_detector = None
         if wake_word_enabled:
-            wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=args.wake_threshold)
-            print(f"[WAKEWORD] Ready (Model: '{args.wake_model}', Threshold: {args.wake_threshold})", flush=True)
+            print(f"[WAKEWORD] Initializing openWakeWord engine (Model: '{args.wake_model}')...", flush=True)
+            try:
+                wakeword_detector = WakeWordDetector(model_name=args.wake_model, threshold=args.wake_threshold)
+                print(f"[WAKEWORD] Ready (Model: '{args.wake_model}', Threshold: {args.wake_threshold})", flush=True)
+            except Exception as e:
+                print(f"⚠️ [WAKEWORD WARNING] Could not initialize wake-word detector: {e}", file=sys.stderr, flush=True)
+                print("⚠️ Falling back to Push-to-Talk interaction mode (Press ENTER to talk).", flush=True)
+                wake_word_enabled = False
 
         stop_detector = None
         barge_in_enabled = args.barge_in or os.getenv("ENABLE_VOICE_BARGE_IN", "false").lower() in ("true", "1", "yes")

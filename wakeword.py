@@ -38,19 +38,41 @@ CHUNK_SIZE = 1280
 
 # Map custom/short wake word names to openWakeWord pretrained models
 WAKE_WORD_ALIASES = {
-    "max": "alexa",
-    "spark": "alexa",
+    "max": "spark",
+    "spark": "spark",
     "jarvis": "hey_jarvis",
     "mycroft": "hey_mycroft",
     "rhasspy": "hey_rhasspy",
 }
 
+def cleanup_corrupted_cached_models(force_all=False):
+    """Removes 0-byte or corrupted .onnx files from openwakeword models directory if a download was aborted."""
+    try:
+        import openwakeword
+        import inspect
+        pkg_file = inspect.getfile(openwakeword)
+        pkg_dir = os.path.dirname(os.path.abspath(pkg_file))
+        models_dir = os.path.join(pkg_dir, "resources", "models")
+        if os.path.exists(models_dir):
+            for fname in os.listdir(models_dir):
+                if fname.endswith(".onnx"):
+                    fpath = os.path.join(models_dir, fname)
+                    try:
+                        sz = os.path.getsize(fpath)
+                        if force_all or sz < 10240:  # < 10KB is an incomplete/aborted download
+                            os.remove(fpath)
+                            print(f"🧹 Removed corrupted/partial model cache: {fname} ({sz} bytes)", flush=True)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
 class WakeWordDetector:
-    def __init__(self, model_name="max", threshold=None):
+    def __init__(self, model_name="spark", threshold=None):
         """
         Initializes openWakeWord model.
 
-        :param model_name: Primary model name or trigger phrase ('max', 'alexa', 'hey_jarvis', 'hey_mycroft')
+        :param model_name: Primary model name or trigger phrase ('spark', 'jarvis', etc.)
         :param threshold: Detection confidence threshold between 0.0 and 1.0 (default 0.40)
         """
         self.model_name = model_name
@@ -67,43 +89,48 @@ class WakeWordDetector:
         try:
             import openwakeword
             from openwakeword.model import Model
-            
-            # Download models if not already cached locally (with try/except to prevent startup hangs)
-            try:
-                with suppress_c_stderr():
-                    openwakeword.utils.download_models()
-            except Exception:
-                pass
 
-            # Resolve model path / alias (e.g., check for local custom spark.onnx model first)
+            # Pre-clean any partial 0-byte/truncated downloads
+            cleanup_corrupted_cached_models(force_all=False)
+
+            # Resolve model path / alias (check for local custom model first like spark.onnx)
             target_key = self.model_name.lower().strip()
             base_dir = os.path.dirname(os.path.abspath(__file__))
             custom_model_path = os.path.join(base_dir, f"{target_key}.onnx")
 
-            models_to_try = []
             if os.path.exists(custom_model_path):
-                models_to_try.append(custom_model_path)
-            
-            actual_model = WAKE_WORD_ALIASES.get(target_key, target_key)
-            if actual_model not in models_to_try:
-                models_to_try.append(actual_model)
-            
-            for fallback in ["alexa", "hey_jarvis"]:
-                if fallback not in models_to_try:
-                    models_to_try.append(fallback)
+                models_to_try = [custom_model_path]
+            else:
+                actual_model = WAKE_WORD_ALIASES.get(target_key, target_key)
+                models_to_try = [actual_model]
 
-            with suppress_c_stderr():
-                try:
+            print(f"⏳ [WakeWord] Initializing ONNX neural engine (Model: {os.path.basename(models_to_try[0])})...", flush=True)
+
+            # Load model; if base models (melspectrogram / embedding) are not cached or corrupted, handle cleanly
+            try:
+                with suppress_c_stderr():
                     self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
+            except Exception as load_err:
+                err_str = str(load_err)
+                if "INVALID_PROTOBUF" in err_str or "Protobuf parsing failed" in err_str:
+                    print(f"⚠️ [WakeWord] Detected corrupted ONNX model file. Purging corrupted cache...", flush=True)
+                    cleanup_corrupted_cached_models(force_all=True)
+                
+                print(f"⚠️ [WakeWord] Downloading required neural base weights...", flush=True)
+                try:
+                    openwakeword.utils.download_models()
+                    with suppress_c_stderr():
+                        self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
                 except Exception:
-                    self.oww_model = Model(wakeword_models=["alexa", "hey_jarvis"], inference_framework="onnx")
+                    # If still failing, attempt fallback without failing hard
+                    with suppress_c_stderr():
+                        self.oww_model = Model(wakeword_models=models_to_try, inference_framework="onnx")
 
             display_phrase = self.model_name.replace("_", " ").title()
-            print(f"✅ [WakeWord] Loaded openWakeWord models (Trigger Phrase: '{display_phrase}', Sensitivity Threshold: {self.threshold})")
+            print(f"✅ [WakeWord] Ready (Trigger Phrase: '{display_phrase}', Sensitivity Threshold: {self.threshold})")
         except Exception as e:
             print(f"❌ [WakeWord Error] Failed to initialize openWakeWord: {e}", file=sys.stderr)
-            print("💡 Tip for Raspberry Pi / Python 3.13: Install openwakeword without tflite-runtime by running:", file=sys.stderr)
-            print("   pip install scikit-learn onnxruntime && pip install openwakeword --no-deps", file=sys.stderr)
+            print("💡 Tip for Raspberry Pi: Run with Push-to-Talk via ./run_pi.sh --push-to-talk", file=sys.stderr)
             raise e
 
     def predict_frame(self, indata, override_threshold=None):
